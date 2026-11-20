@@ -292,34 +292,65 @@ private fun shareProject(context: Context, project: Project) {
 @OptIn(UnstableApi::class)
 private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
     lifecycleScope.launch {
+        val output = File(cacheDir, "mc2_${project.id}.mp4")
         try {
-            val input = Uri.parse(project.video)
-            val output = File(cacheDir, "mc2_${project.id}.mp4")
             if (output.exists()) output.delete()
             val transformer = Transformer.Builder(this@exportMp4).build()
             transformer.addListener(object : Transformer.Listener {
-                override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: androidx.media3.transformer.ExportResult) {
+                override fun onCompleted(
+                    composition: androidx.media3.transformer.Composition,
+                    exportResult: androidx.media3.transformer.ExportResult
+                ) {
                     lifecycleScope.launch(Dispatchers.IO) {
-                        val values = ContentValues().apply {
-                            put(MediaStore.Video.Media.DISPLAY_NAME, "MC2_${project.name.replace(" ", "_")}.mp4")
-                            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-                            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/MC2 ISLAMIC TV")
+                        var savedUri: Uri? = null
+                        try {
+                            val safeName = project.name
+                                .replace(Regex("[^A-Za-z0-9_-]+"), "_")
+                                .trim('_')
+                                .ifBlank { "Video" }
+                            val values = ContentValues().apply {
+                                put(MediaStore.Video.Media.DISPLAY_NAME, "MC2_${safeName}.mp4")
+                                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                                put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/MC2 ISLAMIC TV")
+                                put(MediaStore.Video.Media.IS_PENDING, 1)
+                            }
+                            savedUri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                                ?: throw IllegalStateException("Could not create MP4 file in Movies")
+                            val stream = contentResolver.openOutputStream(savedUri!!)
+                                ?: throw IllegalStateException("Could not open MP4 output stream")
+                            stream.use { out -> output.inputStream().use { input -> input.copyTo(out) } }
+                            val publish = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
+                            contentResolver.update(savedUri!!, publish, null, null)
+                            withContext(Dispatchers.Main) {
+                                done("An adana MP4 a Movies/MC2 ISLAMIC TV")
+                            }
+                        } catch (e: Exception) {
+                            savedUri?.let { runCatching { contentResolver.delete(it, null, null) } }
+                            withContext(Dispatchers.Main) {
+                                done("An kasa ajiye MP4: ${e.message ?: "unknown error"}")
+                            }
+                        } finally {
+                            output.delete()
                         }
-                        val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-                        if (uri != null) contentResolver.openOutputStream(uri)?.use { out -> output.inputStream().use { it.copyTo(out) } }
-                        withContext(Dispatchers.Main) { done(if (uri != null) "MP4 saved to Movies/MC2 ISLAMIC TV" else "Could not save MP4") }
                     }
                 }
-                override fun onError(composition: androidx.media3.transformer.Composition, exportResult: androidx.media3.transformer.ExportResult, exportException: androidx.media3.transformer.ExportException) {
+
+                override fun onError(
+                    composition: androidx.media3.transformer.Composition,
+                    exportResult: androidx.media3.transformer.ExportResult,
+                    exportException: androidx.media3.transformer.ExportException
+                ) {
+                    output.delete()
                     done("Export failed: ${exportException.message ?: "unknown error"}")
                 }
             })
-            val mediaItem = MediaItem.fromUri(input)
-            val editedItem = EditedMediaItem.Builder(mediaItem)
+            val editedItem = EditedMediaItem.Builder(MediaItem.fromUri(Uri.parse(project.video)))
                 .setEffects(Effects(emptyList(), MC2ExportRenderer.buildEffects(project)))
                 .build()
             transformer.start(editedItem, output.absolutePath)
-            // Keep the exporting state active until onCompleted/onError fires.
-        } catch (e: Exception) { done("Export error: ${e.message}") }
+        } catch (e: Exception) {
+            output.delete()
+            done("Export error: ${e.message ?: "unknown error"}")
+        }
     }
 }
