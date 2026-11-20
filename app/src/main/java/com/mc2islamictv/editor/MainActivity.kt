@@ -281,7 +281,7 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                 }
             })
             transformer.start(MediaItem.fromUri(input), output.absolutePath)
-            done("Rendering source MP4…")
+            // Keep the exporting state active until onCompleted/onError fires.
         } catch (e: Exception) { done("Export error: ${e.message}") }
     }
 }
