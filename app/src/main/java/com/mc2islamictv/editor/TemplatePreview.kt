@@ -38,7 +38,7 @@ fun MC2TemplatePreview(videoUri: String, description: String, teacher: String, m
                     AndroidView(factory = { ctx -> VideoView(ctx).apply {
                         tag = videoUri
                         setVideoURI(Uri.parse(videoUri))
-                        setOnPreparedListener { player -> player.isLooping = true; start() }
+                        setOnPreparedListener { player -> player.isLooping = true; view.start() }
                     } }, update = { view ->
                         if (view.tag != videoUri) {
                             view.tag = videoUri
