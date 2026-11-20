@@ -311,7 +311,7 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                                 .trim('_')
                                 .ifBlank { "Video" }
                             val values = ContentValues().apply {
-                                put(MediaStore.Video.Media.DISPLAY_NAME, "MC2_${safeName}.mp4")
+                                put(MediaStore.Video.Media.DISPLAY_NAME, "MC2_${safeName}_${System.currentTimeMillis()}.mp4")
                                 put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
                                 put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/MC2 ISLAMIC TV")
                                 put(MediaStore.Video.Media.IS_PENDING, 1)
