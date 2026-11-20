@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Effects
 import androidx.media3.transformer.Transformer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -276,6 +279,7 @@ private fun shareProject(context: Context, project: Project) {
     context.startActivity(Intent.createChooser(intent, "Share video"))
 }
 
+@OptIn(UnstableApi::class)
 private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
     lifecycleScope.launch {
         try {
@@ -300,7 +304,11 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                     done("Export failed: ${exportException.message ?: "unknown error"}")
                 }
             })
-            transformer.start(MediaItem.fromUri(input), output.absolutePath)
+            val mediaItem = MediaItem.fromUri(input)
+            val editedItem = EditedMediaItem.Builder(mediaItem)
+                .setEffects(Effects(emptyList(), MC2ExportRenderer.buildEffects(project)))
+                .build()
+            transformer.start(editedItem, output.absolutePath)
             // Keep the exporting state active until onCompleted/onError fires.
         } catch (e: Exception) { done("Export error: ${e.message}") }
     }
