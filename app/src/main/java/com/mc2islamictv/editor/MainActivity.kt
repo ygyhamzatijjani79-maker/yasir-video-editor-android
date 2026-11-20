@@ -63,12 +63,18 @@ private fun MC2App() {
     var current by remember { mutableStateOf<Project?>(null) }
     var exporting by remember { mutableStateOf(false) }
     var exportMessage by remember { mutableStateOf("") }
+    val importScope = rememberCoroutineScope()
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            val p = (current ?: Project(name = "New Islamic Video")).copy(video = uri.toString(), updated = System.currentTimeMillis())
-            current = p
-            projects = upsertProject(projects, p, prefs)
+            val baseProject = current ?: Project(name = "New Islamic Video")
+            importScope.launch {
+                val copiedFile = withContext(Dispatchers.IO) { copyImportedVideo(context, uri, baseProject.id) }
+                if (copiedFile != null) {
+                    val p = baseProject.copy(video = Uri.fromFile(copiedFile).toString(), updated = System.currentTimeMillis())
+                    current = p
+                    projects = upsertProject(projects, p, prefs)
+                }
+            }
         }
     }
 
@@ -249,10 +255,24 @@ private fun decodeClips(raw: String): List<TextClip> = runCatching {
         TextClip(item.getString("id"), item.getString("text"), item.getLong("start"), item.getLong("end"))
     }
 }.getOrDefault(emptyList())
-private fun deleteProjectFiles(context: Context, project: Project) { /* Project metadata is removed; source videos remain user-owned originals. */ }
+private fun copyImportedVideo(context: Context, source: Uri, projectId: String): File? = runCatching {
+    val folder = File(context.filesDir, "projects/$projectId").apply { mkdirs() }
+    val destination = File(folder, "source_video")
+    context.contentResolver.openInputStream(source)?.use { input ->
+        destination.outputStream().use { output -> input.copyTo(output) }
+    } ?: return null
+    destination
+}.getOrNull()
+
+private fun deleteProjectFiles(context: Context, project: Project) {
+    File(context.filesDir, "projects/${project.id}").deleteRecursively()
+}
 private fun shareProject(context: Context, project: Project) {
     if (project.video.isBlank()) return
-    val intent = Intent(Intent.ACTION_SEND).apply { type = "video/*"; putExtra(Intent.EXTRA_STREAM, Uri.parse(project.video)); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+    val sourceFile = File(Uri.parse(project.video).path ?: return)
+    if (!sourceFile.exists()) return
+    val contentUri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", sourceFile)
+    val intent = Intent(Intent.ACTION_SEND).apply { type = "video/*"; putExtra(Intent.EXTRA_STREAM, contentUri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
     context.startActivity(Intent.createChooser(intent, "Share video"))
 }
 
