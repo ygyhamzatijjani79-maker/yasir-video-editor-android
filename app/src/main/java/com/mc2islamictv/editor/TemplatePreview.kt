@@ -36,9 +36,16 @@ fun MC2TemplatePreview(videoUri: String, description: String, teacher: String, m
             Box(Modifier.weight(0.62f).fillMaxHeight().background(Color(0xFF092E1C), RoundedCornerShape(topEnd = 15.dp)).border(2.dp, gold, RoundedCornerShape(topEnd = 15.dp)), contentAlignment = Alignment.Center) {
                 if (videoUri.isNotBlank()) {
                     AndroidView(factory = { ctx -> VideoView(ctx).apply {
+                        tag = videoUri
                         setVideoURI(Uri.parse(videoUri))
                         setOnPreparedListener { player -> player.isLooping = true; start() }
-                    } }, update = { view -> if (view.tag != videoUri) { view.tag = videoUri; view.setVideoURI(Uri.parse(videoUri)) } }, modifier = Modifier.fillMaxSize())
+                    } }, update = { view ->
+                        if (view.tag != videoUri) {
+                            view.tag = videoUri
+                            view.setVideoURI(Uri.parse(videoUri))
+                            view.setOnPreparedListener { player -> player.isLooping = true; start() }
+                        }
+                    }, modifier = Modifier.fillMaxSize())
                 } else Text("A\nUPLOAD VIDEO", color = cream, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
             }
         }
