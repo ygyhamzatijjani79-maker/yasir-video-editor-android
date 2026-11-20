@@ -49,7 +49,7 @@ private val Cream = Color(0xFFFFF3D6)
 private val Ink = Color(0xFF14251B)
 
 data class TextClip(val id: String = UUID.randomUUID().toString(), val text: String, val startMs: Long, val endMs: Long)
-data class Project(val id: String = UUID.randomUUID().toString(), val name: String, val video: String = "", val description: String = "", val teacher: String = "", val overlays: List<TextClip> = emptyList(), val brightness: Float = 0f, val updated: Long = System.currentTimeMillis())
+data class Project(val id: String = UUID.randomUUID().toString(), val name: String, val video: String = "", val description: String = "", val teacher: String = "", val overlays: List<TextClip> = emptyList(), val brightness: Float = 0f, val crop: Float = 0f, val updated: Long = System.currentTimeMillis())
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
