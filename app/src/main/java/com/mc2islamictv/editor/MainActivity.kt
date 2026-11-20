@@ -164,7 +164,13 @@ private fun EditorScreen(project: Project, onBack: () -> Unit, onChange: (Projec
         TimelineRow("VIDEO", if (project.video.isBlank()) "No clip" else "Imported video")
         TimelineRow("DESCRIPTION", if (project.description.isBlank()) "Empty" else "Text • full duration")
         TimelineRow("TEACHER", if (project.teacher.isBlank()) "Empty" else "Text • full duration")
-        project.overlays.forEach { TimelineRow("TEXT", "${it.text}  •  ${it.startMs/1000}s–${it.endMs/1000}s") }
+        project.overlays.forEach { clip ->
+            OverlayTrackEditor(
+                clip = clip,
+                onUpdate = { changed -> onChange(project.copy(overlays = project.overlays.map { if (it.id == clip.id) changed else it })) },
+                onDelete = { onChange(project.copy(overlays = project.overlays.filterNot { it.id == clip.id })) }
+            )
+        }
         if (project.overlays.isEmpty()) Text("Ƙara rubutu daban-daban daga + Add Text.", color = Ink, fontSize = 11.sp)
         Spacer(Modifier.height(8.dp))
         Button(onClick = onExport, enabled = !exporting, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Emerald)) { Text(if (exporting) "Exporting…" else "EXPORT MP4  ↓") }
@@ -180,6 +186,29 @@ private fun EditorScreen(project: Project, onBack: () -> Unit, onChange: (Projec
 }
 
 @Composable
+private fun OverlayTrackEditor(clip: TextClip, onUpdate: (TextClip) -> Unit, onDelete: () -> Unit) {
+    var startText by remember(clip.id) { mutableStateOf((clip.startMs / 1000L).toString()) }
+    var endText by remember(clip.id) { mutableStateOf((clip.endMs / 1000L).toString()) }
+    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp).background(Color(0xFFE9DFC6), RoundedCornerShape(9.dp)).padding(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("TEXT TRACK", color = Emerald, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) { Icon(Icons.Default.Delete, "Delete text clip", tint = Color(0xFFB3261E)) }
+        }
+        Text(clip.text, color = Ink, fontSize = 12.sp, maxLines = 2)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(value = startText, onValueChange = { value ->
+                startText = value
+                value.toLongOrNull()?.let { seconds -> onUpdate(clip.copy(startMs = (seconds.coerceAtLeast(0) * 1000L).coerceAtMost(clip.endMs))) }
+            }, label = { Text("Start (sec)") }, modifier = Modifier.weight(1f), singleLine = true)
+            OutlinedTextField(value = endText, onValueChange = { value ->
+                endText = value
+                value.toLongOrNull()?.let { seconds -> onUpdate(clip.copy(endMs = (seconds.coerceAtLeast(0) * 1000L).coerceAtLeast(clip.startMs))) }
+            }, label = { Text("End (sec)") }, modifier = Modifier.weight(1f), singleLine = true)
+        }
+    }
+}
+
+@Composable
 private fun TimelineRow(label: String, detail: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp).background(Color(0xFFE9DFC6), RoundedCornerShape(7.dp)).padding(horizontal = 8.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = Emerald, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(100.dp))
@@ -192,12 +221,13 @@ private fun loadProjects(prefs: android.content.SharedPreferences): List<Project
     return raw.split("\n").filter { it.isNotBlank() }.mapNotNull { line ->
         runCatching {
             val f = line.split("|")
-            Project(id = f[0], name = dec(f[1]), video = dec(f[2]), description = dec(f[3]), teacher = dec(f[4]), updated = f[5].toLong())
+            val clips = if (f.size > 6) decodeClips(dec(f[6])) else emptyList()
+            Project(id = f[0], name = dec(f[1]), video = dec(f[2]), description = dec(f[3]), teacher = dec(f[4]), updated = f[5].toLong(), overlays = clips)
         }.getOrNull()
     }.sortedByDescending { it.updated }
 }
 private fun saveProjects(list: List<Project>, prefs: android.content.SharedPreferences) {
-    prefs.edit().putString("projects", list.joinToString("\n") { "${it.id}|${enc(it.name)}|${enc(it.video)}|${enc(it.description)}|${enc(it.teacher)}|${it.updated}" }).apply()
+    prefs.edit().putString("projects", list.joinToString("\n") { "${it.id}|${enc(it.name)}|${enc(it.video)}|${enc(it.description)}|${enc(it.teacher)}|${it.updated}|${enc(encodeClips(it.overlays))}" }).apply()
 }
 private fun upsertProject(list: List<Project>, p: Project, prefs: android.content.SharedPreferences): List<Project> {
     val updated = (list.filterNot { it.id == p.id } + p.copy(updated = System.currentTimeMillis())).sortedByDescending { it.updated }
@@ -205,6 +235,20 @@ private fun upsertProject(list: List<Project>, p: Project, prefs: android.conten
 }
 private fun enc(s: String) = android.util.Base64.encodeToString(s.toByteArray(), android.util.Base64.NO_WRAP)
 private fun dec(s: String) = String(android.util.Base64.decode(s, android.util.Base64.DEFAULT))
+private fun encodeClips(clips: List<TextClip>): String {
+    val array = org.json.JSONArray()
+    clips.forEach { clip ->
+        array.put(org.json.JSONObject().put("id", clip.id).put("text", clip.text).put("start", clip.startMs).put("end", clip.endMs))
+    }
+    return array.toString()
+}
+private fun decodeClips(raw: String): List<TextClip> = runCatching {
+    val array = org.json.JSONArray(raw)
+    (0 until array.length()).map { index ->
+        val item = array.getJSONObject(index)
+        TextClip(item.getString("id"), item.getString("text"), item.getLong("start"), item.getLong("end"))
+    }
+}.getOrDefault(emptyList())
 private fun deleteProjectFiles(context: Context, project: Project) { /* Project metadata is removed; source videos remain user-owned originals. */ }
 private fun shareProject(context: Context, project: Project) {
     if (project.video.isBlank()) return
