@@ -13,6 +13,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -150,7 +152,7 @@ private fun HomeScreen(projects: List<Project>, onNew: () -> Unit, onOpen: (Proj
 private fun EditorScreen(project: Project, onBack: () -> Unit, onChange: (Project) -> Unit, onPickVideo: () -> Unit, onExport: () -> Unit, exporting: Boolean, exportMessage: String) {
     var newOverlay by remember { mutableStateOf("") }
     var showOverlayDialog by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().background(Cream).padding(14.dp)) {
+    Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("‹ Projects", color = Emerald) }
             Spacer(Modifier.weight(1f))
@@ -160,7 +162,7 @@ private fun EditorScreen(project: Project, onBack: () -> Unit, onChange: (Projec
             videoUri = project.video,
             description = project.description,
             teacher = project.teacher,
-            modifier = Modifier.fillMaxWidth().weight(1f)
+            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
         )
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
