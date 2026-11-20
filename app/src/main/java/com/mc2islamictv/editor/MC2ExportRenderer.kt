@@ -39,7 +39,10 @@ internal object MC2ExportRenderer {
         val effects = mutableListOf<androidx.media3.common.Effect>()
         if (project.brightness != 0f) effects += Brightness(project.brightness.coerceIn(-1f, 1f))
         val crop = project.crop.coerceIn(0f, 0.45f)
-        if (crop > 0f) effects += Crop(-crop, crop, -crop, crop)
+        if (crop > 0f) {
+            val edge = (-1f + 2f * crop)
+            effects += Crop(edge, -edge, edge, -edge)
+        }
         effects += OverlayEffect(layers)
         return effects
     }
@@ -136,7 +139,7 @@ private class TimedTextOverlay(private val clips: List<TextClip>) : TextOverlay(
     override fun getText(presentationTimeUs: Long): SpannableString {
         val timeMs = presentationTimeUs / 1000L
         val visible = clips.filter { timeMs >= it.startMs && timeMs < it.endMs }
-        return SpannableString(visible.joinToString("\\n") { it.text })
+        return SpannableString(visible.joinToString("\n") { it.text })
     }
 
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
