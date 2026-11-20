@@ -174,6 +174,11 @@ private fun EditorScreen(project: Project, onBack: () -> Unit, onChange: (Projec
             Slider(value = project.brightness, onValueChange = { onChange(project.copy(brightness = it)) }, valueRange = -0.5f..0.5f, modifier = Modifier.weight(1f))
             Text(String.format("%.1f", project.brightness), color = Emerald, fontSize = 11.sp)
         }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Crop", color = Emerald, fontWeight = FontWeight.Bold, modifier = Modifier.width(76.dp))
+            Slider(value = project.crop, onValueChange = { onChange(project.copy(crop = it)) }, valueRange = 0f..0.35f, modifier = Modifier.weight(1f))
+            Text(String.format("%.0f%%", project.crop * 100f), color = Emerald, fontSize = 11.sp)
+        }
         Text("TIMELINE", color = Emerald, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
         TimelineRow("VIDEO", if (project.video.isBlank()) "No clip" else "Imported video")
         TimelineRow("DESCRIPTION", if (project.description.isBlank()) "Empty" else "Text • full duration")
@@ -236,12 +241,12 @@ private fun loadProjects(prefs: android.content.SharedPreferences): List<Project
         runCatching {
             val f = line.split("|")
             val clips = if (f.size > 6) decodeClips(dec(f[6])) else emptyList()
-            Project(id = f[0], name = dec(f[1]), video = dec(f[2]), description = dec(f[3]), teacher = dec(f[4]), updated = f[5].toLong(), overlays = clips, brightness = if (f.size > 7) f[7].toFloatOrNull() ?: 0f else 0f)
+            Project(id = f[0], name = dec(f[1]), video = dec(f[2]), description = dec(f[3]), teacher = dec(f[4]), updated = f[5].toLong(), overlays = clips, brightness = if (f.size > 7) f[7].toFloatOrNull() ?: 0f else 0f, crop = if (f.size > 8) f[8].toFloatOrNull() ?: 0f else 0f)
         }.getOrNull()
     }.sortedByDescending { it.updated }
 }
 private fun saveProjects(list: List<Project>, prefs: android.content.SharedPreferences) {
-    prefs.edit().putString("projects", list.joinToString("\n") { "${it.id}|${enc(it.name)}|${enc(it.video)}|${enc(it.description)}|${enc(it.teacher)}|${it.updated}|${enc(encodeClips(it.overlays))}|${it.brightness}" }).apply()
+    prefs.edit().putString("projects", list.joinToString("\n") { "${it.id}|${enc(it.name)}|${enc(it.video)}|${enc(it.description)}|${enc(it.teacher)}|${it.updated}|${enc(encodeClips(it.overlays))}|${it.brightness}|${it.crop}" }).apply()
 }
 private fun upsertProject(list: List<Project>, p: Project, prefs: android.content.SharedPreferences): List<Project> {
     val updated = (list.filterNot { it.id == p.id } + p.copy(updated = System.currentTimeMillis())).sortedByDescending { it.updated }
