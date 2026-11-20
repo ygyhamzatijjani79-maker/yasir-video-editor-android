@@ -43,7 +43,7 @@ fun MC2TemplatePreview(videoUri: String, description: String, teacher: String, m
                         if (view.tag != videoUri) {
                             view.tag = videoUri
                             view.setVideoURI(Uri.parse(videoUri))
-                            view.setOnPreparedListener { player -> player.isLooping = true; start() }
+                            view.setOnPreparedListener { player -> player.isLooping = true; view.start() }
                         }
                     }, modifier = Modifier.fillMaxSize())
                 } else Text("A\nUPLOAD VIDEO", color = cream, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
