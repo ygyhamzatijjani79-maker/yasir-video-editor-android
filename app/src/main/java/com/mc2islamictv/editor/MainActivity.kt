@@ -49,7 +49,7 @@ private val Cream = Color(0xFFFFF3D6)
 private val Ink = Color(0xFF14251B)
 
 data class TextClip(val id: String = UUID.randomUUID().toString(), val text: String, val startMs: Long, val endMs: Long)
-data class Project(val id: String = UUID.randomUUID().toString(), val name: String, val video: String = "", val description: String = "", val teacher: String = "", val overlays: List<TextClip> = emptyList(), val updated: Long = System.currentTimeMillis())
+data class Project(val id: String = UUID.randomUUID().toString(), val name: String, val video: String = "", val description: String = "", val teacher: String = "", val overlays: List<TextClip> = emptyList(), val brightness: Float = 0f, val updated: Long = System.currentTimeMillis())
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -169,6 +169,11 @@ private fun EditorScreen(project: Project, onBack: () -> Unit, onChange: (Projec
         }
         OutlinedTextField(value = project.description, onValueChange = { onChange(project.copy(description = it)) }, label = { Text("B — Description") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
         OutlinedTextField(value = project.teacher, onValueChange = { onChange(project.copy(teacher = it)) }, label = { Text("C — Sunan malami") }, modifier = Modifier.fillMaxWidth())
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Lighting", color = Emerald, fontWeight = FontWeight.Bold, modifier = Modifier.width(76.dp))
+            Slider(value = project.brightness, onValueChange = { onChange(project.copy(brightness = it)) }, valueRange = -0.5f..0.5f, modifier = Modifier.weight(1f))
+            Text(String.format("%.1f", project.brightness), color = Emerald, fontSize = 11.sp)
+        }
         Text("TIMELINE", color = Emerald, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
         TimelineRow("VIDEO", if (project.video.isBlank()) "No clip" else "Imported video")
         TimelineRow("DESCRIPTION", if (project.description.isBlank()) "Empty" else "Text • full duration")
@@ -231,12 +236,12 @@ private fun loadProjects(prefs: android.content.SharedPreferences): List<Project
         runCatching {
             val f = line.split("|")
             val clips = if (f.size > 6) decodeClips(dec(f[6])) else emptyList()
-            Project(id = f[0], name = dec(f[1]), video = dec(f[2]), description = dec(f[3]), teacher = dec(f[4]), updated = f[5].toLong(), overlays = clips)
+            Project(id = f[0], name = dec(f[1]), video = dec(f[2]), description = dec(f[3]), teacher = dec(f[4]), updated = f[5].toLong(), overlays = clips, brightness = if (f.size > 7) f[7].toFloatOrNull() ?: 0f else 0f)
         }.getOrNull()
     }.sortedByDescending { it.updated }
 }
 private fun saveProjects(list: List<Project>, prefs: android.content.SharedPreferences) {
-    prefs.edit().putString("projects", list.joinToString("\n") { "${it.id}|${enc(it.name)}|${enc(it.video)}|${enc(it.description)}|${enc(it.teacher)}|${it.updated}|${enc(encodeClips(it.overlays))}" }).apply()
+    prefs.edit().putString("projects", list.joinToString("\n") { "${it.id}|${enc(it.name)}|${enc(it.video)}|${enc(it.description)}|${enc(it.teacher)}|${it.updated}|${enc(encodeClips(it.overlays))}|${it.brightness}" }).apply()
 }
 private fun upsertProject(list: List<Project>, p: Project, prefs: android.content.SharedPreferences): List<Project> {
     val updated = (list.filterNot { it.id == p.id } + p.copy(updated = System.currentTimeMillis())).sortedByDescending { it.updated }
