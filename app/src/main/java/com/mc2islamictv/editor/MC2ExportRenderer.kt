@@ -9,6 +9,7 @@ import android.graphics.Typeface
 import android.text.SpannableString
 import androidx.media3.common.OverlaySettings
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Brightness
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.StaticOverlaySettings
@@ -34,7 +35,10 @@ internal object MC2ExportRenderer {
         if (project.overlays.isNotEmpty()) {
             layers += TimedTextOverlay(project.overlays)
         }
-        return listOf(OverlayEffect(layers))
+        val effects = mutableListOf<androidx.media3.common.Effect>()
+        if (project.brightness != 0f) effects += Brightness(project.brightness.coerceIn(-1f, 1f))
+        effects += OverlayEffect(layers)
+        return effects
     }
 
     private fun createTemplateBitmap(project: Project): Bitmap {
