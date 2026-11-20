@@ -147,11 +147,12 @@ private fun EditorScreen(project: Project, onBack: () -> Unit, onChange: (Projec
             Spacer(Modifier.weight(1f))
             Text("MC2 ISLAMIC TV", color = Emerald, fontWeight = FontWeight.ExtraBold)
         }
-        Box(Modifier.fillMaxWidth().weight(1f).background(Emerald, RoundedCornerShape(18.dp)).padding(8.dp), contentAlignment = Alignment.Center) {
-            if (project.video.isNotBlank()) {
-                AndroidView(factory = { ctx -> VideoView(ctx).apply { setVideoURI(Uri.parse(project.video)); setOnPreparedListener { it.isLooping = true; start() } } }, modifier = Modifier.fillMaxWidth().aspectRatio(16f/9f))
-            } else Text("A  •  Video preview\n\nB  •  Description\nC  •  Teacher name\n\nTap Import Video", color = Cream, fontWeight = FontWeight.Bold)
-        }
+        MC2TemplatePreview(
+            videoUri = project.video,
+            description = project.description,
+            teacher = project.teacher,
+            modifier = Modifier.fillMaxWidth().weight(1f)
+        )
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             Button(onClick = onPickVideo, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Emerald)) { Text("Import Video") }
