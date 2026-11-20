@@ -4,9 +4,9 @@ An offline-first Android video-template editor project.
 
 ## Current development status
 
-This repository contains a native Android/Jetpack Compose project scaffold, Home/Editor UI, an A/B/C template preview, local recent-project metadata, video selection, additional text clips with editable start/end seconds, persistence for those clips, and an initial MP4 source-transcode path using AndroidX Media3 Transformer.
+This repository contains a native Android/Jetpack Compose project scaffold, Home/Editor UI, an A/B/C template preview, local recent-project metadata, imported-video copies in app-private project folders, project-folder deletion, safe FileProvider sharing, additional text clips with editable start/end seconds, persistence for those clips, and an initial MP4 source-transcode path using AndroidX Media3 Transformer.
 
-**This is not yet the completed editor and no APK has been verified yet.** The additional text clips now have editable start/end time fields and are saved with the project, but the timeline is not yet a complete visual multi-track editor with scrubbing and drag-to-trim. Full template/video compositing, crop and lighting effects, actual timed text rendering, robust deletion of app-managed media, and quality/device test coverage still need implementation and verification. The initial export currently transcodes the selected source video and does not yet burn the MC2 template and text layers into the exported picture. Do not treat this version as production-ready.
+**This is not yet the completed editor and no APK has been verified yet.** The additional text clips now have editable start/end time fields and are saved with the project, but the timeline is not yet a complete visual multi-track editor with scrubbing and drag-to-trim. Full template/video compositing, crop and lighting effects, actual timed text rendering, quality/device test coverage still need implementation and verification. The initial export currently transcodes the selected source video and does not yet burn the MC2 template and text layers into the exported picture. Do not treat this version as production-ready.
 
 ## Product requirements
 
