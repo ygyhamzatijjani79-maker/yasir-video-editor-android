@@ -65,7 +65,7 @@ fun MC2TemplatePreview(
             .background(Color(0xFF064226))
     ) {
         val videoWidth = maxWidth * 0.575f
-        val videoHeight = maxHeight * 0.68f
+        val videoHeight = maxHeight * 0.70f
         Box(
             modifier = Modifier
                 .offset(x = maxWidth * 0.38f, y = maxHeight * 0.055f)
