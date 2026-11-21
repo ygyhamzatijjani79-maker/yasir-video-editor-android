@@ -35,8 +35,9 @@ fun MC2TemplatePreview(
     val black = Color(0xFF080808)
     val white = Color(0xFFF7F7F7)
     val line = Color(0xFFBDBDBD)
+    val context = androidx.compose.ui.platform.LocalContext.current
     val player = remember(videoUri) {
-        if (videoUri.isBlank()) null else ExoPlayer.Builder(androidx.compose.ui.platform.LocalContext.current).build().apply {
+        if (videoUri.isBlank()) null else ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.parse(videoUri)))
             repeatMode = ExoPlayer.REPEAT_MODE_ONE
             prepare()
@@ -80,7 +81,7 @@ fun MC2TemplatePreview(
                             PlayerView(ctx).apply {
                                 useController = false
                                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                player = this@MC2TemplatePreview.player
+                                player = player
                             }
                         },
                         modifier = Modifier.fillMaxSize().graphicsLayer {
