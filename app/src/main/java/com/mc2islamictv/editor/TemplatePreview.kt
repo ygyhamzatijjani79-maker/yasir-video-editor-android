@@ -1,25 +1,24 @@
 package com.mc2islamictv.editor
 
 import android.net.Uri
+import android.view.TextureView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import android.view.TextureView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
@@ -31,12 +30,11 @@ fun MC2TemplatePreview(
     teacher: String,
     modifier: Modifier = Modifier,
     zoom: Float = 1f,
-    onZoomChange: (Float) -> Unit = {}
+    panX: Float = 0f,
+    panY: Float = 0f,
+    onTransformChange: (Float, Float, Float) -> Unit = { _, _, _ -> }
 ) {
-    val black = Color(0xFF080808)
-    val white = Color(0xFFF7F7F7)
-    val line = Color(0xFFBDBDBD)
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val player = remember(videoUri) {
         if (videoUri.isBlank()) null else ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.parse(videoUri)))
@@ -47,67 +45,50 @@ fun MC2TemplatePreview(
         }
     }
     DisposableEffect(player) { onDispose { player?.release() } }
+    val template = remember(description, teacher) {
+        MC2ExportRenderer.createTemplateBitmap(Project(name = "Preview", description = description, teacher = teacher)).asImageBitmap()
+    }
 
-    Column(
+    BoxWithConstraints(
         modifier = modifier
-            .background(black, RoundedCornerShape(18.dp))
-            .border(1.dp, line, RoundedCornerShape(18.dp))
-            .padding(7.dp)
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF064226))
     ) {
-        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            Box(
-                Modifier.weight(0.34f).fillMaxHeight()
-                    .background(white, RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp))
-                    .padding(9.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    description.ifBlank { "B\n\nDESCRIPTION" },
-                    color = black, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center, maxLines = 10
+        val videoWidth = maxWidth * 0.575f
+        val videoHeight = maxHeight * 0.68f
+        Box(
+            modifier = Modifier
+                .offset(x = maxWidth * 0.38f, y = maxHeight * 0.055f)
+                .size(videoWidth, videoHeight)
+                .clip(RoundedCornerShape(24.dp))
+                .pointerInput(zoom, panX, panY) {
+                    detectTransformGestures { _, pan, scaleChange, _ ->
+                        val nextZoom = (zoom * scaleChange).coerceIn(1f, 4f)
+                        val nextPanX = (panX + pan.x / size.width / nextZoom * 2f).coerceIn(-1f, 1f)
+                        val nextPanY = (panY + pan.y / size.height / nextZoom * 2f).coerceIn(-1f, 1f)
+                        onTransformChange(nextZoom, nextPanX, nextPanY)
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            if (player != null) {
+                AndroidView(
+                    factory = { ctx -> TextureView(ctx).also { player.setVideoTextureView(it) } },
+                    modifier = Modifier.fillMaxSize().graphicsLayer {
+                        scaleX = zoom
+                        scaleY = zoom
+                        translationX = panX * size.width * 0.45f
+                        translationY = panY * size.height * 0.45f
+                    }
                 )
             }
-            Box(
-                Modifier.weight(0.66f).fillMaxHeight()
-                    .background(Color.Black, RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp))
-                    .clip(RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp))
-                    .pointerInput(zoom) {
-                        detectTransformGestures { _, _, scale, _ ->
-                            onZoomChange((zoom * scale).coerceIn(1f, 3f))
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                if (player != null) {
-                    AndroidView(
-                        factory = { ctx -> TextureView(ctx).also { texture -> player.setVideoTextureView(texture) } },
-                        modifier = Modifier.fillMaxSize().graphicsLayer {
-                            scaleX = zoom
-                            scaleY = zoom
-                        }
-                    )
-                } else {
-                    Text("A  •  VIDEO PREVIEW", color = white, fontWeight = FontWeight.Bold)
-                }
-            }
         }
-        Spacer(Modifier.height(7.dp))
-        Box(
-            Modifier.fillMaxWidth().height(43.dp).background(white, RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                teacher.ifBlank { "C  •  TEACHER NAME" },
-                color = black, fontWeight = FontWeight.Bold, fontSize = 16.sp,
-                textAlign = TextAlign.Center, maxLines = 1
-            )
-        }
-        Spacer(Modifier.height(5.dp))
-        Box(
-            Modifier.fillMaxWidth().height(27.dp).background(black, RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("▶  MC2 ISLAMIC TV", color = white, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-        }
+        Image(
+            bitmap = template,
+            contentDescription = "MC2 Islamic video template",
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
