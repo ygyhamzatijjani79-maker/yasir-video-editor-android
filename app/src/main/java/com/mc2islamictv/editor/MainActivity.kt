@@ -185,7 +185,7 @@ private fun EditorScreen(
             MC2TemplatePreview(
                 videoUri = project.video, description = project.description, teacher = project.teacher,
                 modifier = Modifier.fillMaxWidth().aspectRatio(1f),
-                zoom = project.zoom, panX = project.panX, panY = project.panY, onTransformChange = { z, x, y -> onChange(project.copy(zoom = z, panX = x, panY = y)) }
+                zoom = project.zoom, panX = project.panX, panY = project.panY, speed = project.speed, volume = project.volume, muted = project.muted, onTransformChange = { z, x, y -> onChange(project.copy(zoom = z, panX = x, panY = y)) }
             )
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                 Button(onClick = onPickVideo, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) { Text("＋  Import video") }
@@ -203,7 +203,7 @@ private fun EditorScreen(
             SettingSlider("Saturation", project.saturation, -100f..100f, fg, panel, { onChange(project.copy(saturation = it)) }, String.format("%.0f", project.saturation))
             SettingSlider("Rotation", project.rotation, 0f..360f, fg, panel, { onChange(project.copy(rotation = it)) }, String.format("%.0f°", project.rotation))
             SettingSlider("Playback speed", project.speed, 0.5f..2f, fg, panel, { onChange(project.copy(speed = it)) }, String.format("%.1f×", project.speed))
-            SettingSlider("Audio volume", project.volume, 0f..2f, fg, panel, { onChange(project.copy(volume = it, muted = false)) }, String.format("%.0f%%", project.volume * 100f))
+            SettingSlider("Audio volume", project.volume, 0f..1f, fg, panel, { onChange(project.copy(volume = it, muted = false)) }, String.format("%.0f%%", project.volume * 100f))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Mute original audio", color = fg, modifier = Modifier.weight(1f))
                 Switch(checked = project.muted, onCheckedChange = { onChange(project.copy(muted = it)) })
@@ -398,7 +398,7 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
             val sourceItem = MediaItem.Builder().setUri(Uri.parse(project.video))
                 .setClippingConfiguration(clipping).build()
             val gain = androidx.media3.common.audio.GainProcessor(
-                androidx.media3.common.audio.DefaultGainProvider.Builder(if (project.muted) 0f else project.volume.coerceIn(0f, 2f)).build()
+                androidx.media3.common.audio.DefaultGainProvider.Builder(if (project.muted) 0f else project.volume.coerceIn(0f, 1f)).build()
             )
             val speedProvider = object : androidx.media3.common.audio.SpeedProvider {
                 override fun getSpeed(timeUs: Long): Float = project.speed.coerceIn(0.5f, 2f)
