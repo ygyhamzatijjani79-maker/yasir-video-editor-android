@@ -43,7 +43,7 @@ internal object MC2ExportRenderer {
         val totalCrop = (project.crop.coerceIn(0f, 0.45f) +
             ((1f - (1f / project.zoom.coerceIn(1f, 4f))) / 2f)).coerceIn(0f, 0.46f)
         val available = (1f - 2f * totalCrop).coerceAtLeast(0.08f)
-        val px = (project.panX.coerceIn(-1f, 1f) * totalCrop).coerceIn(-totalCrop, totalCrop)
+        val px = (-project.panX.coerceIn(-1f, 1f) * totalCrop).coerceIn(-totalCrop, totalCrop)
         val py = (project.panY.coerceIn(-1f, 1f) * totalCrop).coerceIn(-totalCrop, totalCrop)
         val left = (-1f + 2f * totalCrop + 2f * px).coerceIn(-1f, 0.92f)
         val right = (1f - 2f * totalCrop + 2f * px).coerceIn(left + 0.08f, 1f)
