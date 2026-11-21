@@ -203,7 +203,6 @@ private fun EditorScreen(
             SettingSlider("Saturation", project.saturation, -100f..100f, fg, panel, { onChange(project.copy(saturation = it)) }, String.format("%.0f", project.saturation))
             SettingSlider("Rotation", project.rotation, 0f..360f, fg, panel, { onChange(project.copy(rotation = it)) }, String.format("%.0f°", project.rotation))
             SettingSlider("Playback speed", project.speed, 0.5f..2f, fg, panel, { onChange(project.copy(speed = it)) }, String.format("%.1f×", project.speed))
-            SettingSlider("Audio volume", project.volume, 0f..1f, fg, panel, { onChange(project.copy(volume = it, muted = false)) }, String.format("%.0f%%", project.volume * 100f))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Mute original audio", color = fg, modifier = Modifier.weight(1f))
                 Switch(checked = project.muted, onCheckedChange = { onChange(project.copy(muted = it)) })
@@ -397,16 +396,14 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                 .build()
             val sourceItem = MediaItem.Builder().setUri(Uri.parse(project.video))
                 .setClippingConfiguration(clipping).build()
-            val gain = androidx.media3.common.audio.GainProcessor(
-                androidx.media3.common.audio.DefaultGainProvider.Builder(if (project.muted) 0f else project.volume.coerceIn(0f, 1f)).build()
-            )
             val speedProvider = object : androidx.media3.common.audio.SpeedProvider {
                 override fun getSpeed(timeUs: Long): Float = project.speed.coerceIn(0.5f, 2f)
                 override fun getNextSpeedChangeTimeUs(timeUs: Long): Long = androidx.media3.common.C.TIME_UNSET
             }
             val speedEffects = Effects.createExperimentalSpeedChangingEffect(speedProvider)
             val editedItem = EditedMediaItem.Builder(sourceItem)
-                .setEffects(Effects(listOf(gain, speedEffects.first), MC2ExportRenderer.buildEffects(project) + speedEffects.second))
+                .setRemoveAudio(project.muted)
+                .setEffects(Effects(listOf(speedEffects.first), MC2ExportRenderer.buildEffects(project) + speedEffects.second))
                 .build()
             transformer.start(editedItem, output.absolutePath)
         } catch (e: Exception) {
