@@ -52,7 +52,7 @@ private val Cream = Color(0xFFFFF3D6)
 private val Ink = Color(0xFF14251B)
 
 data class TextClip(val id: String = UUID.randomUUID().toString(), val text: String, val startMs: Long, val endMs: Long)
-data class Project(val id: String = UUID.randomUUID().toString(), val name: String, val video: String = "", val description: String = "", val teacher: String = "", val overlays: List<TextClip> = emptyList(), val brightness: Float = 0f, val crop: Float = 0f, val zoom: Float = 1f, val updated: Long = System.currentTimeMillis())
+data class Project(val id: String = UUID.randomUUID().toString(), val name: String, val video: String = "", val description: String = "", val teacher: String = "", val overlays: List<TextClip> = emptyList(), val brightness: Float = 0f, val crop: Float = 0f, val zoom: Float = 1f, val panX: Float = 0f, val panY: Float = 0f, val contrast: Float = 0f, val saturation: Float = 0f, val rotation: Float = 0f, val speed: Float = 1f, val volume: Float = 1f, val trimStartMs: Long = 0L, val trimEndMs: Long = 0L, val muted: Boolean = false, val updated: Long = System.currentTimeMillis())
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -184,8 +184,8 @@ private fun EditorScreen(
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp)) {
             MC2TemplatePreview(
                 videoUri = project.video, description = project.description, teacher = project.teacher,
-                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
-                zoom = project.zoom, onZoomChange = { onChange(project.copy(zoom = it)) }
+                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                zoom = project.zoom, panX = project.panX, panY = project.panY, onTransformChange = { z, x, y -> onChange(project.copy(zoom = z, panX = x, panY = y)) }
             )
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                 Button(onClick = onPickVideo, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) { Text("＋  Import video") }
@@ -198,7 +198,17 @@ private fun EditorScreen(
             Text("VIDEO ADJUSTMENTS", color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 18.dp, bottom = 4.dp))
             SettingSlider("Zoom / Fill", project.zoom, 1f..3f, fg, panel, { onChange(project.copy(zoom = it)) }, String.format("%.1f×", project.zoom))
             SettingSlider("Crop", project.crop, 0f..0.35f, fg, panel, { onChange(project.copy(crop = it)) }, String.format("%.0f%%", project.crop * 100))
-            SettingSlider("Lighting", project.brightness, -0.5f..0.5f, fg, panel, { onChange(project.copy(brightness = it)) }, String.format("%.1f", project.brightness))
+            SettingSlider("Lighting", project.brightness, -1f..1f, fg, panel, { onChange(project.copy(brightness = it)) }, String.format("%.1f", project.brightness))
+            SettingSlider("Contrast", project.contrast, -1f..1f, fg, panel, { onChange(project.copy(contrast = it)) }, String.format("%.1f", project.contrast))
+            SettingSlider("Saturation", project.saturation, -100f..100f, fg, panel, { onChange(project.copy(saturation = it)) }, String.format("%.0f", project.saturation))
+            SettingSlider("Rotation", project.rotation, 0f..360f, fg, panel, { onChange(project.copy(rotation = it)) }, String.format("%.0f°", project.rotation))
+            SettingSlider("Playback speed", project.speed, 0.5f..2f, fg, panel, { onChange(project.copy(speed = it)) }, String.format("%.1f×", project.speed))
+            SettingSlider("Audio volume", project.volume, 0f..2f, fg, panel, { onChange(project.copy(volume = it, muted = false)) }, String.format("%.0f%%", project.volume * 100f))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Mute original audio", color = fg, modifier = Modifier.weight(1f))
+                Switch(checked = project.muted, onCheckedChange = { onChange(project.copy(muted = it)) })
+            }
+            OutlinedButton(onClick = { onChange(project.copy(zoom = 1f, panX = 0f, panY = 0f, crop = 0f, brightness = 0f, contrast = 0f, saturation = 0f, rotation = 0f, speed = 1f, volume = 1f, muted = false)) }, modifier = Modifier.fillMaxWidth()) { Text("Reset adjustments") }
             Text("TIMELINE", color = fg, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
             TimelineRow("VIDEO", if (project.video.isBlank()) "No video imported" else "Source video ready", fg, panel)
             TimelineRow("B  DESCRIPTION", if (project.description.isBlank()) "No description" else "Visible throughout video", fg, panel)
@@ -273,12 +283,12 @@ private fun loadProjects(prefs: android.content.SharedPreferences): List<Project
         runCatching {
             val f = line.split("|")
             val clips = if (f.size > 6) decodeClips(dec(f[6])) else emptyList()
-            Project(id = f[0], name = dec(f[1]), video = dec(f[2]), description = dec(f[3]), teacher = dec(f[4]), updated = f[5].toLong(), overlays = clips, brightness = if (f.size > 7) f[7].toFloatOrNull() ?: 0f else 0f, crop = if (f.size > 8) f[8].toFloatOrNull() ?: 0f else 0f, zoom = if (f.size > 9) f[9].toFloatOrNull() ?: 1f else 1f)
+            Project(id = f[0], name = dec(f[1]), video = dec(f[2]), description = dec(f[3]), teacher = dec(f[4]), updated = f[5].toLong(), overlays = clips, brightness = if (f.size > 7) f[7].toFloatOrNull() ?: 0f else 0f, crop = if (f.size > 8) f[8].toFloatOrNull() ?: 0f else 0f, zoom = if (f.size > 9) f[9].toFloatOrNull() ?: 1f else 1f, panX = if (f.size > 10) f[10].toFloatOrNull() ?: 0f else 0f, panY = if (f.size > 11) f[11].toFloatOrNull() ?: 0f else 0f, contrast = if (f.size > 12) f[12].toFloatOrNull() ?: 0f else 0f, saturation = if (f.size > 13) f[13].toFloatOrNull() ?: 0f else 0f, rotation = if (f.size > 14) f[14].toFloatOrNull() ?: 0f else 0f, speed = if (f.size > 15) f[15].toFloatOrNull() ?: 1f else 1f, volume = if (f.size > 16) f[16].toFloatOrNull() ?: 1f else 1f, trimStartMs = if (f.size > 17) f[17].toLongOrNull() ?: 0L else 0L, trimEndMs = if (f.size > 18) f[18].toLongOrNull() ?: 0L else 0L, muted = if (f.size > 19) f[19].toBoolean() else false)
         }.getOrNull()
     }.sortedByDescending { it.updated }
 }
 private fun saveProjects(list: List<Project>, prefs: android.content.SharedPreferences) {
-    prefs.edit().putString("projects", list.joinToString("\n") { "${it.id}|${enc(it.name)}|${enc(it.video)}|${enc(it.description)}|${enc(it.teacher)}|${it.updated}|${enc(encodeClips(it.overlays))}|${it.brightness}|${it.crop}|${it.zoom}" }).apply()
+    prefs.edit().putString("projects", list.joinToString("\n") { "${it.id}|${enc(it.name)}|${enc(it.video)}|${enc(it.description)}|${enc(it.teacher)}|${it.updated}|${enc(encodeClips(it.overlays))}|${it.brightness}|${it.crop}|${it.zoom}|${it.panX}|${it.panY}|${it.contrast}|${it.saturation}|${it.rotation}|${it.speed}|${it.volume}|${it.trimStartMs}|${it.trimEndMs}|${it.muted}" }).apply()
 }
 private fun upsertProject(list: List<Project>, p: Project, prefs: android.content.SharedPreferences): List<Project> {
     val updated = (list.filterNot { it.id == p.id } + p.copy(updated = System.currentTimeMillis())).sortedByDescending { it.updated }
@@ -376,8 +386,22 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                     done("Export failed: ${exportException.message ?: "unknown error"}")
                 }
             })
-            val editedItem = EditedMediaItem.Builder(MediaItem.fromUri(Uri.parse(project.video)))
-                .setEffects(Effects(emptyList(), MC2ExportRenderer.buildEffects(project)))
+            val clipping = MediaItem.ClippingConfiguration.Builder()
+                .setStartPositionMs(project.trimStartMs.coerceAtLeast(0L))
+                .apply { if (project.trimEndMs > project.trimStartMs) setEndPositionMs(project.trimEndMs) }
+                .build()
+            val sourceItem = MediaItem.Builder().setUri(Uri.parse(project.video))
+                .setClippingConfiguration(clipping).build()
+            val gain = androidx.media3.common.audio.GainProcessor(
+                androidx.media3.common.audio.DefaultGainProvider.Builder(if (project.muted) 0f else project.volume.coerceIn(0f, 2f)).build()
+            )
+            val speedProvider = object : androidx.media3.common.audio.SpeedProvider {
+                override fun getSpeed(timeUs: Long): Float = project.speed.coerceIn(0.5f, 2f)
+                override fun getNextSpeedChangeTimeUs(timeUs: Long): Long = androidx.media3.common.C.TIME_UNSET
+            }
+            val editedItem = EditedMediaItem.Builder(sourceItem)
+                .setEffects(Effects(listOf(gain), MC2ExportRenderer.buildEffects(project)))
+                .setSpeed(speedProvider)
                 .build()
             transformer.start(editedItem, output.absolutePath)
         } catch (e: Exception) {
