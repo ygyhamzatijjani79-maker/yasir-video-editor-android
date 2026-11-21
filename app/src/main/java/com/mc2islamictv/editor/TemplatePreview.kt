@@ -74,8 +74,8 @@ fun MC2TemplatePreview(
                 .pointerInput(zoom, panX, panY) {
                     detectTransformGestures { _, pan, scaleChange, _ ->
                         val nextZoom = (zoom * scaleChange).coerceIn(1f, 4f)
-                        val nextPanX = (panX + pan.x / size.width / nextZoom * 2f).coerceIn(-1f, 1f)
-                        val nextPanY = (panY + pan.y / size.height / nextZoom * 2f).coerceIn(-1f, 1f)
+                        val nextPanX = if (nextZoom <= 1.01f) 0f else (panX + pan.x / size.width / nextZoom * 2f).coerceIn(-1f, 1f)
+                        val nextPanY = if (nextZoom <= 1.01f) 0f else (panY + pan.y / size.height / nextZoom * 2f).coerceIn(-1f, 1f)
                         onTransformChange(nextZoom, nextPanX, nextPanY)
                     }
                 },
