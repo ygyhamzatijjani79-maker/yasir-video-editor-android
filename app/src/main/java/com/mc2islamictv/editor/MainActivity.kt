@@ -208,6 +208,11 @@ private fun EditorScreen(
                 Text("Mute original audio", color = fg, modifier = Modifier.weight(1f))
                 Switch(checked = project.muted, onCheckedChange = { onChange(project.copy(muted = it)) })
             }
+            Text("TRIM VIDEO (milliseconds)", color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = project.trimStartMs.toString(), onValueChange = { value -> value.toLongOrNull()?.let { onChange(project.copy(trimStartMs = it.coerceAtLeast(0L))) } }, label = { Text("Start ms") }, modifier = Modifier.weight(1f), singleLine = true)
+                OutlinedTextField(value = project.trimEndMs.toString(), onValueChange = { value -> value.toLongOrNull()?.let { onChange(project.copy(trimEndMs = it.coerceAtLeast(0L))) } }, label = { Text("End ms (0 = full)") }, modifier = Modifier.weight(1f), singleLine = true)
+            }
             OutlinedButton(onClick = { onChange(project.copy(zoom = 1f, panX = 0f, panY = 0f, crop = 0f, brightness = 0f, contrast = 0f, saturation = 0f, rotation = 0f, speed = 1f, volume = 1f, muted = false)) }, modifier = Modifier.fillMaxWidth()) { Text("Reset adjustments") }
             Text("TIMELINE", color = fg, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
             TimelineRow("VIDEO", if (project.video.isBlank()) "No video imported" else "Source video ready", fg, panel)
