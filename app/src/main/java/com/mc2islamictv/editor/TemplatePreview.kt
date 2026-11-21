@@ -18,10 +18,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.view.TextureView
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
 
 @Composable
 fun MC2TemplatePreview(
@@ -40,6 +40,7 @@ fun MC2TemplatePreview(
         if (videoUri.isBlank()) null else ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.parse(videoUri)))
             repeatMode = ExoPlayer.REPEAT_MODE_ONE
+            videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
             prepare()
             playWhenReady = true
         }
@@ -77,13 +78,7 @@ fun MC2TemplatePreview(
             ) {
                 if (player != null) {
                     AndroidView(
-                        factory = { ctx ->
-                            PlayerView(ctx).apply {
-                                useController = false
-                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                player = player
-                            }
-                        },
+                        factory = { ctx -> TextureView(ctx).also { texture -> player.setVideoTextureView(texture) } },
                         modifier = Modifier.fillMaxSize().graphicsLayer {
                             scaleX = zoom
                             scaleY = zoom
