@@ -52,7 +52,7 @@ private val Cream = Color(0xFFFFF3D6)
 private val Ink = Color(0xFF14251B)
 
 data class TextClip(val id: String = UUID.randomUUID().toString(), val text: String, val startMs: Long, val endMs: Long)
-data class Project(val id: String = UUID.randomUUID().toString(), val name: String, val video: String = "", val description: String = "", val teacher: String = "", val overlays: List<TextClip> = emptyList(), val brightness: Float = 0f, val crop: Float = 0f, val updated: Long = System.currentTimeMillis())
+data class Project(val id: String = UUID.randomUUID().toString(), val name: String, val video: String = "", val description: String = "", val teacher: String = "", val overlays: List<TextClip> = emptyList(), val brightness: Float = 0f, val crop: Float = 0f, val zoom: Float = 1f, val updated: Long = System.currentTimeMillis())
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,6 +69,7 @@ private fun MC2App() {
     var current by remember { mutableStateOf<Project?>(null) }
     var exporting by remember { mutableStateOf(false) }
     var exportMessage by remember { mutableStateOf("") }
+    var darkMode by remember { mutableStateOf(prefs.getBoolean("dark_mode", false)) }
     val importScope = rememberCoroutineScope()
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -84,10 +85,10 @@ private fun MC2App() {
         }
     }
 
-    MaterialTheme(colorScheme = lightColorScheme(primary = Emerald, secondary = Gold, background = Cream, surface = Cream)) {
-        Surface(Modifier.fillMaxSize(), color = Cream) {
+    MaterialTheme(colorScheme = if (darkMode) darkColorScheme(primary = Color.White, secondary = Color.LightGray, background = Color(0xFF101010), surface = Color(0xFF181818)) else lightColorScheme(primary = Color.Black, secondary = Color.DarkGray, background = Color.White, surface = Color(0xFFF5F5F5))) {
+        Surface(Modifier.fillMaxSize(), color = if (darkMode) Color(0xFF101010) else Color.White) {
             if (current == null) {
-                HomeScreen(projects, onNew = { current = Project(name = "Project ${projects.size + 1}") },
+                HomeScreen(projects, darkMode = darkMode, onToggleTheme = { darkMode = !darkMode; prefs.edit().putBoolean("dark_mode", darkMode).apply() }, onNew = { current = Project(name = "Project ${projects.size + 1}") },
                     onOpen = { current = it }, onDelete = { p -> projects = projects.filterNot { it.id == p.id }; saveProjects(projects, prefs); deleteProjectFiles(context, p) },
                     onShare = { p -> shareProject(context, p) })
             } else {
@@ -106,7 +107,7 @@ private fun MC2App() {
                         }
                     },
                     exporting = exporting,
-                    exportMessage = exportMessage
+                    exportMessage = exportMessage, darkMode = darkMode, onToggleTheme = { darkMode = !darkMode; prefs.edit().putBoolean("dark_mode", darkMode).apply() }
                 )
             }
         }
@@ -114,34 +115,46 @@ private fun MC2App() {
 }
 
 @Composable
-private fun HomeScreen(projects: List<Project>, onNew: () -> Unit, onOpen: (Project) -> Unit, onDelete: (Project) -> Unit, onShare: (Project) -> Unit) {
-    Column(Modifier.fillMaxSize().background(Emerald).padding(18.dp)) {
-        Text("MC2 ISLAMIC TV", color = Gold, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
-        Text("Offline Islamic Video Studio", color = Cream, fontSize = 13.sp)
-        Spacer(Modifier.height(22.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("Recent Projects", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            FilledTonalIconButton(onClick = onNew, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = Gold, contentColor = Emerald)) { Icon(Icons.Default.Add, "New project") }
+private fun HomeScreen(
+    projects: List<Project>, darkMode: Boolean, onToggleTheme: () -> Unit,
+    onNew: () -> Unit, onOpen: (Project) -> Unit, onDelete: (Project) -> Unit, onShare: (Project) -> Unit
+) {
+    val bg = if (darkMode) Color(0xFF101010) else Color.White
+    val fg = if (darkMode) Color.White else Color(0xFF111111)
+    val card = if (darkMode) Color(0xFF202020) else Color(0xFFF2F2F2)
+    Column(Modifier.fillMaxSize().background(bg).padding(20.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("MC2 ISLAMIC TV", color = fg, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
+                Text("VIDEO STUDIO  •  OFFLINE", color = fg.copy(alpha = .58f), fontSize = 11.sp)
+            }
+            TextButton(onClick = onToggleTheme) { Text(if (darkMode) "LIGHT" else "DARK", color = fg) }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(28.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Recent projects", color = fg, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Button(onClick = onNew, colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) { Icon(Icons.Default.Add, null); Text(" New") }
+        }
+        Spacer(Modifier.height(14.dp))
         if (projects.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Babu project tukuna", color = Cream, fontSize = 18.sp)
-                    Spacer(Modifier.height(10.dp))
-                    Button(onClick = onNew, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Emerald)) { Text("＋  Create New Video") }
+                    Text("Your studio is ready.", color = fg, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Create your first Islamic video project.", color = fg.copy(alpha = .6f))
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = onNew, colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) { Text("＋  Create project") }
                 }
             }
         } else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(projects, key = { it.id }) { p ->
-                Card(colors = CardDefaults.cardColors(containerColor = Cream), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().clickable { onOpen(p) }) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Card(colors = CardDefaults.cardColors(containerColor = card), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().clickable { onOpen(p) }) {
+                    Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(p.name, color = Emerald, fontWeight = FontWeight.Bold)
-                            Text(if (p.teacher.isBlank()) "No teacher name" else p.teacher, color = Ink, fontSize = 12.sp)
+                            Text(p.name, color = fg, fontWeight = FontWeight.Bold)
+                            Text(if (p.teacher.isBlank()) "Untitled video" else p.teacher, color = fg.copy(alpha = .6f), fontSize = 12.sp)
                         }
-                        IconButton(onClick = { onShare(p) }) { Icon(Icons.Default.Share, "Share", tint = Emerald) }
-                        IconButton(onClick = { onDelete(p) }) { Icon(Icons.Default.Delete, "Delete", tint = Color(0xFFB3261E)) }
+                        IconButton(onClick = { onShare(p) }) { Icon(Icons.Default.Share, "Share", tint = fg) }
+                        IconButton(onClick = { onDelete(p) }) { Icon(Icons.Default.Delete, "Delete", tint = fg) }
                     }
                 }
             }
@@ -150,61 +163,77 @@ private fun HomeScreen(projects: List<Project>, onNew: () -> Unit, onOpen: (Proj
 }
 
 @Composable
-private fun EditorScreen(project: Project, onBack: () -> Unit, onChange: (Project) -> Unit, onPickVideo: () -> Unit, onExport: () -> Unit, exporting: Boolean, exportMessage: String) {
+private fun EditorScreen(
+    project: Project, onBack: () -> Unit, onChange: (Project) -> Unit, onPickVideo: () -> Unit,
+    onExport: () -> Unit, exporting: Boolean, exportMessage: String,
+    darkMode: Boolean, onToggleTheme: () -> Unit
+) {
     var newOverlay by remember { mutableStateOf("") }
     var showOverlayDialog by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(14.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹ Projects", color = Emerald) }
+    val bg = if (darkMode) Color(0xFF101010) else Color.White
+    val fg = if (darkMode) Color.White else Color(0xFF111111)
+    val panel = if (darkMode) Color(0xFF202020) else Color(0xFFF1F1F1)
+    val field = if (darkMode) Color(0xFF181818) else Color(0xFFFAFAFA)
+    Column(Modifier.fillMaxSize().background(bg)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("‹ Projects", color = fg) }
             Spacer(Modifier.weight(1f))
-            Text("MC2 ISLAMIC TV", color = Emerald, fontWeight = FontWeight.ExtraBold)
+            Text("MC2 STUDIO", color = fg, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+            TextButton(onClick = onToggleTheme) { Text(if (darkMode) "☼" else "◐", color = fg) }
         }
-        MC2TemplatePreview(
-            videoUri = project.video,
-            description = project.description,
-            teacher = project.teacher,
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
-        )
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(onClick = onPickVideo, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Emerald)) { Text("Import Video") }
-            Button(onClick = { showOverlayDialog = true }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Emerald)) { Text("+ Add Text") }
-        }
-        OutlinedTextField(value = project.description, onValueChange = { onChange(project.copy(description = it)) }, label = { Text("B — Description") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
-        OutlinedTextField(value = project.teacher, onValueChange = { onChange(project.copy(teacher = it)) }, label = { Text("C — Sunan malami") }, modifier = Modifier.fillMaxWidth())
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Lighting", color = Emerald, fontWeight = FontWeight.Bold, modifier = Modifier.width(76.dp))
-            Slider(value = project.brightness, onValueChange = { onChange(project.copy(brightness = it)) }, valueRange = -0.5f..0.5f, modifier = Modifier.weight(1f))
-            Text(String.format("%.1f", project.brightness), color = Emerald, fontSize = 11.sp)
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Crop", color = Emerald, fontWeight = FontWeight.Bold, modifier = Modifier.width(76.dp))
-            Slider(value = project.crop, onValueChange = { onChange(project.copy(crop = it)) }, valueRange = 0f..0.35f, modifier = Modifier.weight(1f))
-            Text(String.format("%.0f%%", project.crop * 100f), color = Emerald, fontSize = 11.sp)
-        }
-        Text("TIMELINE", color = Emerald, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
-        TimelineRow("VIDEO", if (project.video.isBlank()) "No clip" else "Imported video")
-        TimelineRow("DESCRIPTION", if (project.description.isBlank()) "Empty" else "Text • full duration")
-        TimelineRow("TEACHER", if (project.teacher.isBlank()) "Empty" else "Text • full duration")
-        project.overlays.forEach { clip ->
-            OverlayTrackEditor(
-                clip = clip,
-                onUpdate = { changed -> onChange(project.copy(overlays = project.overlays.map { if (it.id == clip.id) changed else it })) },
-                onDelete = { onChange(project.copy(overlays = project.overlays.filterNot { it.id == clip.id })) }
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp)) {
+            MC2TemplatePreview(
+                videoUri = project.video, description = project.description, teacher = project.teacher,
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                zoom = project.zoom, onZoomChange = { onChange(project.copy(zoom = it)) }
             )
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                Button(onClick = onPickVideo, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) { Text("＋  Import video") }
+                OutlinedButton(onClick = { showOverlayDialog = true }, modifier = Modifier.weight(1f)) { Text("＋  Add text", color = fg) }
+            }
+            Text("PROJECT CONTENT", color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
+            OutlinedTextField(value = project.description, onValueChange = { onChange(project.copy(description = it)) }, label = { Text("B  •  Description") }, modifier = Modifier.fillMaxWidth(), minLines = 2, colors = OutlinedTextFieldDefaults.colors(focusedTextColor = fg, unfocusedTextColor = fg, focusedContainerColor = field, unfocusedContainerColor = field))
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(value = project.teacher, onValueChange = { onChange(project.copy(teacher = it)) }, label = { Text("C  •  Teacher name") }, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = fg, unfocusedTextColor = fg, focusedContainerColor = field, unfocusedContainerColor = field))
+            Text("VIDEO ADJUSTMENTS", color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 18.dp, bottom = 4.dp))
+            SettingSlider("Zoom / Fill", project.zoom, 1f..3f, fg, panel, { onChange(project.copy(zoom = it)) }, String.format("%.1f×", project.zoom))
+            SettingSlider("Crop", project.crop, 0f..0.35f, fg, panel, { onChange(project.copy(crop = it)) }, String.format("%.0f%%", project.crop * 100))
+            SettingSlider("Lighting", project.brightness, -0.5f..0.5f, fg, panel, { onChange(project.copy(brightness = it)) }, String.format("%.1f", project.brightness))
+            Text("TIMELINE", color = fg, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
+            TimelineRow("VIDEO", if (project.video.isBlank()) "No video imported" else "Source video ready", fg, panel)
+            TimelineRow("B  DESCRIPTION", if (project.description.isBlank()) "No description" else "Visible throughout video", fg, panel)
+            TimelineRow("C  TEACHER", if (project.teacher.isBlank()) "No teacher name" else "Visible throughout video", fg, panel)
+            project.overlays.forEach { clip ->
+                OverlayTrackEditor(clip, fg, panel,
+                    onUpdate = { changed -> onChange(project.copy(overlays = project.overlays.map { if (it.id == clip.id) changed else it })) },
+                    onDelete = { onChange(project.copy(overlays = project.overlays.filterNot { it.id == clip.id })) })
+            }
+            Spacer(Modifier.height(12.dp))
         }
-        if (project.overlays.isEmpty()) Text("Ƙara rubutu daban-daban daga + Add Text.", color = Ink, fontSize = 11.sp)
-        Spacer(Modifier.height(8.dp))
-        Button(onClick = onExport, enabled = !exporting, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Emerald)) { Text(if (exporting) "Exporting…" else "EXPORT MP4  ↓") }
-        if (exportMessage.isNotBlank()) Text(exportMessage, color = Emerald, fontSize = 12.sp, modifier = Modifier.padding(6.dp))
+        Column(Modifier.fillMaxWidth().background(panel).padding(12.dp)) {
+            if (exportMessage.isNotBlank()) Text(exportMessage, color = fg, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
+            Button(onClick = onExport, enabled = !exporting, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) {
+                Text(if (exporting) "RENDERING MP4…" else "EXPORT  •  MP4", fontWeight = FontWeight.Bold)
+            }
+        }
     }
     if (showOverlayDialog) AlertDialog(
-        onDismissRequest = { showOverlayDialog = false },
-        title = { Text("Add timeline text") },
-        text = { OutlinedTextField(value = newOverlay, onValueChange = { newOverlay = it }, label = { Text("Rubutu") }) },
+        onDismissRequest = { showOverlayDialog = false }, title = { Text("Add timeline text") },
+        text = { OutlinedTextField(value = newOverlay, onValueChange = { newOverlay = it }, label = { Text("Text") }) },
         confirmButton = { TextButton(onClick = { if (newOverlay.isNotBlank()) onChange(project.copy(overlays = project.overlays + TextClip(text = newOverlay, startMs = 0, endMs = 5000))); newOverlay = ""; showOverlayDialog = false }) { Text("Add") } },
         dismissButton = { TextButton(onClick = { showOverlayDialog = false }) { Text("Cancel") } }
     )
+}
+
+@Composable
+private fun SettingSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, fg: Color, panel: Color, onChange: (Float) -> Unit, valueLabel: String) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(panel, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 7.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = fg, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(valueLabel, color = fg.copy(alpha = .65f), fontSize = 12.sp)
+        }
+        Slider(value = value, onValueChange = onChange, valueRange = range, colors = SliderDefaults.colors(thumbColor = fg, activeTrackColor = fg, inactiveTrackColor = fg.copy(alpha = .2f)))
+    }
 }
 
 @Composable
