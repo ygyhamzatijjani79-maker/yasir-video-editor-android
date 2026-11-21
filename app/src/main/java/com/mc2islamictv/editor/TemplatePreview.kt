@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +70,7 @@ fun MC2TemplatePreview(
             Box(
                 Modifier.weight(0.66f).fillMaxHeight()
                     .background(Color.Black, RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp))
+                    .clip(RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp))
                     .pointerInput(zoom) {
                         detectTransformGestures { _, _, scale, _ ->
                             onZoomChange((zoom * scale).coerceIn(1f, 3f))
