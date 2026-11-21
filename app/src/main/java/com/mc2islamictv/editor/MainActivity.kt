@@ -399,9 +399,9 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                 override fun getSpeed(timeUs: Long): Float = project.speed.coerceIn(0.5f, 2f)
                 override fun getNextSpeedChangeTimeUs(timeUs: Long): Long = androidx.media3.common.C.TIME_UNSET
             }
+            val speedEffects = Effects.createExperimentalSpeedChangingEffect(speedProvider)
             val editedItem = EditedMediaItem.Builder(sourceItem)
-                .setEffects(Effects(listOf(gain), MC2ExportRenderer.buildEffects(project)))
-                .setSpeed(speedProvider)
+                .setEffects(Effects(listOf(gain, speedEffects.first), MC2ExportRenderer.buildEffects(project) + speedEffects.second))
                 .build()
             transformer.start(editedItem, output.absolutePath)
         } catch (e: Exception) {
