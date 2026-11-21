@@ -237,15 +237,15 @@ private fun SettingSlider(label: String, value: Float, range: ClosedFloatingPoin
 }
 
 @Composable
-private fun OverlayTrackEditor(clip: TextClip, onUpdate: (TextClip) -> Unit, onDelete: () -> Unit) {
+private fun OverlayTrackEditor(clip: TextClip, fg: Color, panel: Color, onUpdate: (TextClip) -> Unit, onDelete: () -> Unit) {
     var startText by remember(clip.id) { mutableStateOf((clip.startMs / 1000L).toString()) }
     var endText by remember(clip.id) { mutableStateOf((clip.endMs / 1000L).toString()) }
-    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp).background(Color(0xFFE9DFC6), RoundedCornerShape(9.dp)).padding(8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp).background(panel, RoundedCornerShape(9.dp)).padding(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("TEXT TRACK", color = Emerald, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) { Icon(Icons.Default.Delete, "Delete text clip", tint = Color(0xFFB3261E)) }
+            Text("TEXT TRACK", color = fg, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) { Icon(Icons.Default.Delete, "Delete text clip", tint = fg) }
         }
-        Text(clip.text, color = Ink, fontSize = 12.sp, maxLines = 2)
+        Text(clip.text, color = fg, fontSize = 12.sp, maxLines = 2)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(value = startText, onValueChange = { value ->
                 startText = value
@@ -260,10 +260,10 @@ private fun OverlayTrackEditor(clip: TextClip, onUpdate: (TextClip) -> Unit, onD
 }
 
 @Composable
-private fun TimelineRow(label: String, detail: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp).background(Color(0xFFE9DFC6), RoundedCornerShape(7.dp)).padding(horizontal = 8.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Emerald, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(100.dp))
-        Text(detail, color = Ink, fontSize = 10.sp)
+private fun TimelineRow(label: String, detail: String, fg: Color, panel: Color) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).background(panel, RoundedCornerShape(10.dp)).padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = fg, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(120.dp))
+        Text(detail, color = fg.copy(alpha = .7f), fontSize = 11.sp)
     }
 }
 
@@ -273,12 +273,12 @@ private fun loadProjects(prefs: android.content.SharedPreferences): List<Project
         runCatching {
             val f = line.split("|")
             val clips = if (f.size > 6) decodeClips(dec(f[6])) else emptyList()
-            Project(id = f[0], name = dec(f[1]), video = dec(f[2]), description = dec(f[3]), teacher = dec(f[4]), updated = f[5].toLong(), overlays = clips, brightness = if (f.size > 7) f[7].toFloatOrNull() ?: 0f else 0f, crop = if (f.size > 8) f[8].toFloatOrNull() ?: 0f else 0f)
+            Project(id = f[0], name = dec(f[1]), video = dec(f[2]), description = dec(f[3]), teacher = dec(f[4]), updated = f[5].toLong(), overlays = clips, brightness = if (f.size > 7) f[7].toFloatOrNull() ?: 0f else 0f, crop = if (f.size > 8) f[8].toFloatOrNull() ?: 0f else 0f, zoom = if (f.size > 9) f[9].toFloatOrNull() ?: 1f else 1f)
         }.getOrNull()
     }.sortedByDescending { it.updated }
 }
 private fun saveProjects(list: List<Project>, prefs: android.content.SharedPreferences) {
-    prefs.edit().putString("projects", list.joinToString("\n") { "${it.id}|${enc(it.name)}|${enc(it.video)}|${enc(it.description)}|${enc(it.teacher)}|${it.updated}|${enc(encodeClips(it.overlays))}|${it.brightness}|${it.crop}" }).apply()
+    prefs.edit().putString("projects", list.joinToString("\n") { "${it.id}|${enc(it.name)}|${enc(it.video)}|${enc(it.description)}|${enc(it.teacher)}|${it.updated}|${enc(encodeClips(it.overlays))}|${it.brightness}|${it.crop}|${it.zoom}" }).apply()
 }
 private fun upsertProject(list: List<Project>, p: Project, prefs: android.content.SharedPreferences): List<Project> {
     val updated = (list.filterNot { it.id == p.id } + p.copy(updated = System.currentTimeMillis())).sortedByDescending { it.updated }
