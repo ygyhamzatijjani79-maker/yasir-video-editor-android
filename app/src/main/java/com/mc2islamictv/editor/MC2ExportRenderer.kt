@@ -38,9 +38,11 @@ internal object MC2ExportRenderer {
         }
         val effects = mutableListOf<androidx.media3.common.Effect>()
         if (project.brightness != 0f) effects += Brightness(project.brightness.coerceIn(-1f, 1f))
-        val crop = project.crop.coerceIn(0f, 0.45f)
-        if (crop > 0f) {
-            val edge = (-1f + 2f * crop)
+        val manualCrop = project.crop.coerceIn(0f, 0.35f)
+        val zoomCrop = ((1f - (1f / project.zoom.coerceIn(1f, 3f))) / 2f).coerceIn(0f, 0.33f)
+        val totalCrop = (manualCrop + zoomCrop).coerceIn(0f, 0.44f)
+        if (totalCrop > 0f) {
+            val edge = -1f + (2f * totalCrop)
             effects += Crop(edge, -edge, edge, -edge)
         }
         effects += OverlayEffect(layers)
@@ -54,23 +56,23 @@ internal object MC2ExportRenderer {
         val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = 13f
-            color = Color.rgb(225, 174, 35)
+            color = Color.rgb(255, 255, 255)
         }
 
         // Deep-green outer frame, with the video window cleared below.
-        fill.color = Color.rgb(3, 63, 30)
+        fill.color = Color.rgb(8, 8, 8)
         canvas.drawRoundRect(RectF(8f, 8f, W - 8f, H - 8f), 42f, 42f, fill)
 
         // B: description panel.
         val panel = RectF(38f, 45f, 650f, 830f)
-        fill.color = Color.rgb(255, 242, 211)
+        fill.color = Color.rgb(248, 248, 248)
         canvas.drawRoundRect(panel, 58f, 58f, fill)
         canvas.drawRoundRect(panel, 58f, 58f, stroke)
 
         val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(5, 76, 37)
+            color = Color.rgb(8, 8, 8)
             textAlign = Paint.Align.CENTER
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
             textSize = 48f
         }
         drawWrappedText(canvas, project.description.ifBlank { " " }, 340f, 390f, 500f, titlePaint, 58f, 9)
@@ -86,25 +88,25 @@ internal object MC2ExportRenderer {
 
         // C: teacher-name banner.
         val banner = RectF(135f, 858f, 1785f, 1000f)
-        fill.color = Color.rgb(2, 67, 31)
+        fill.color = Color.rgb(8, 8, 8)
         canvas.drawRoundRect(banner, 72f, 72f, fill)
         canvas.drawRoundRect(banner, 72f, 72f, stroke)
         val teacherPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             textAlign = Paint.Align.CENTER
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
             textSize = 62f
         }
         drawFitText(canvas, project.teacher.ifBlank { " " }, 960f, 948f, 1500f, teacherPaint)
 
         // Fixed channel label: not editable in the project.
         val channel = RectF(565f, 1010f, 1355f, 1070f)
-        fill.color = Color.rgb(255, 243, 216)
+        fill.color = Color.rgb(248, 248, 248)
         canvas.drawRoundRect(channel, 30f, 30f, fill)
         val channelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(4, 73, 35)
+            color = Color.rgb(8, 8, 8)
             textAlign = Paint.Align.CENTER
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
             textSize = 43f
         }
         canvas.drawText("▶  |  MC2 ISLAMIC TV", 960f, 1056f, channelPaint)
