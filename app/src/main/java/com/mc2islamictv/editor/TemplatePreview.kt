@@ -32,6 +32,9 @@ fun MC2TemplatePreview(
     zoom: Float = 1f,
     panX: Float = 0f,
     panY: Float = 0f,
+    speed: Float = 1f,
+    volume: Float = 1f,
+    muted: Boolean = false,
     onTransformChange: (Float, Float, Float) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
@@ -42,7 +45,13 @@ fun MC2TemplatePreview(
             videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
             prepare()
             playWhenReady = true
+            playbackParameters = androidx.media3.common.PlaybackParameters(speed.coerceIn(0.5f, 2f))
+            this.volume = if (muted) 0f else volume.coerceIn(0f, 1f)
         }
+    }
+    LaunchedEffect(player, speed, volume, muted) {
+        player?.playbackParameters = androidx.media3.common.PlaybackParameters(speed.coerceIn(0.5f, 2f))
+        player?.volume = if (muted) 0f else volume.coerceIn(0f, 1f)
     }
     DisposableEffect(player) { onDispose { player?.release() } }
     val template = remember(description, teacher) {
