@@ -84,6 +84,30 @@ internal object MC2ExportRenderer {
         canvas.drawRoundRect(RectF(12f, 12f, 1068f, 1068f), 48f, 48f, line)
         canvas.drawRoundRect(RectF(30f, 30f, 1050f, 1050f), 36f, 36f, fineGold)
 
+        // Glowing flower ornaments rotate in sync with the exported video timestamp.
+        val flowerPoints = listOf(82f to 82f, 998f to 82f, 82f to 998f, 998f to 998f)
+        flowerPoints.forEachIndexed { index, point ->
+            val cx = point.first
+            val cy = point.second
+            val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = gold; style = Paint.Style.FILL; alpha = 38 }
+            val petalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = gold; style = Paint.Style.FILL
+                alpha = (150 + 90 * (0.5f + 0.5f * kotlin.math.sin(t * Math.PI * 6).toFloat())).toInt().coerceIn(0, 240)
+            }
+            canvas.drawCircle(cx, cy, 43f, glow)
+            canvas.save()
+            canvas.rotate(t * 360f * if (index % 2 == 0) 1f else -1f, cx, cy)
+            for (petal in 0 until 6) {
+                canvas.save()
+                canvas.rotate(petal * 60f, cx, cy)
+                canvas.drawCircle(cx, cy - 22f, 13f, petalPaint)
+                canvas.restore()
+            }
+            val centre = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = cream; style = Paint.Style.FILL }
+            canvas.drawCircle(cx, cy, 8f, centre)
+            canvas.restore()
+        }
+
         val b = Path().apply {
             moveTo(48f, 785f); lineTo(48f, 245f); cubicTo(48f, 150f, 105f, 100f, 205f, 100f)
             cubicTo(305f, 100f, 365f, 155f, 365f, 245f); lineTo(365f, 785f); close()
