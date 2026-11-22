@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -168,75 +169,120 @@ private fun EditorScreen(
     onExport: () -> Unit, exporting: Boolean, exportMessage: String,
     darkMode: Boolean, onToggleTheme: () -> Unit
 ) {
-    var newOverlay by remember { mutableStateOf("") }
-    var showOverlayDialog by remember { mutableStateOf(false) }
+    var selectedTool by remember { mutableStateOf("Trim") }
+    var isPlaying by remember(project.id, project.video) { mutableStateOf(true) }
+    var playheadMs by remember(project.id, project.video) { mutableLongStateOf(0L) }
+    var durationMs by remember(project.id, project.video) { mutableLongStateOf(0L) }
     val bg = if (darkMode) Color(0xFF101010) else Color.White
     val fg = if (darkMode) Color.White else Color(0xFF111111)
     val panel = if (darkMode) Color(0xFF202020) else Color(0xFFF1F1F1)
     val field = if (darkMode) Color(0xFF181818) else Color(0xFFFAFAFA)
+    val tools = listOf("Trim", "Crop", "Zoom", "Lighting", "Contrast", "Colour", "Rotate", "Speed", "Audio", "Reset")
+
     Column(Modifier.fillMaxSize().background(bg)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("‹ Projects", color = fg) }
             Spacer(Modifier.weight(1f))
-            Text("MC2 STUDIO", color = fg, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+            Text("MC2 STUDIO", color = fg, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
             TextButton(onClick = onToggleTheme) { Text(if (darkMode) "☼" else "◐", color = fg) }
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp)) {
             MC2TemplatePreview(
                 videoUri = project.video, description = project.description, teacher = project.teacher,
                 modifier = Modifier.fillMaxWidth().aspectRatio(1f),
-                zoom = project.zoom, panX = project.panX, panY = project.panY, speed = project.speed, volume = project.volume, muted = project.muted, onTransformChange = { z, x, y -> onChange(project.copy(zoom = z, panX = x, panY = y)) }
+                zoom = project.zoom, panX = project.panX, panY = project.panY, crop = project.crop,
+                brightness = project.brightness, contrast = project.contrast, saturation = project.saturation,
+                rotation = project.rotation, speed = project.speed, volume = project.volume, muted = project.muted,
+                isPlaying = isPlaying,
+                onPlaybackUpdate = { position, duration -> playheadMs = position; durationMs = duration },
+                onSeekTo = { target -> playheadMs = target },
+                onTransformChange = { z, x, y -> onChange(project.copy(zoom = z, panX = x, panY = y)) }
             )
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                Button(onClick = onPickVideo, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) { Text("＋  Import video") }
-                OutlinedButton(onClick = { showOverlayDialog = true }, modifier = Modifier.weight(1f)) { Text("＋  Add text", color = fg) }
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = onPickVideo, modifier = Modifier.weight(1f).height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) { Text("＋  Import video") }
+                OutlinedButton(onClick = { onChange(project.copy(zoom = 1f, panX = 0f, panY = 0f)) }, modifier = Modifier.height(48.dp)) { Text("Reset view", color = fg) }
             }
-            Text("PROJECT CONTENT", color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
+            Text("PROJECT CONTENT", color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 18.dp, bottom = 7.dp))
             OutlinedTextField(value = project.description, onValueChange = { onChange(project.copy(description = it)) }, label = { Text("B  •  Description") }, modifier = Modifier.fillMaxWidth(), minLines = 2, colors = OutlinedTextFieldDefaults.colors(focusedTextColor = fg, unfocusedTextColor = fg, focusedContainerColor = field, unfocusedContainerColor = field))
             Spacer(Modifier.height(8.dp))
-            OutlinedTextField(value = project.teacher, onValueChange = { onChange(project.copy(teacher = it)) }, label = { Text("C  •  Teacher name") }, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = fg, unfocusedTextColor = fg, focusedContainerColor = field, unfocusedContainerColor = field))
-            Text("VIDEO ADJUSTMENTS", color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 18.dp, bottom = 4.dp))
-            SettingSlider("Zoom / Fill", project.zoom, 1f..3f, fg, panel, { onChange(project.copy(zoom = it)) }, String.format("%.1f×", project.zoom))
-            SettingSlider("Crop", project.crop, 0f..0.35f, fg, panel, { onChange(project.copy(crop = it)) }, String.format("%.0f%%", project.crop * 100))
-            SettingSlider("Lighting", project.brightness, -1f..1f, fg, panel, { onChange(project.copy(brightness = it)) }, String.format("%.1f", project.brightness))
-            SettingSlider("Contrast", project.contrast, -1f..1f, fg, panel, { onChange(project.copy(contrast = it)) }, String.format("%.1f", project.contrast))
-            SettingSlider("Saturation", project.saturation, -100f..100f, fg, panel, { onChange(project.copy(saturation = it)) }, String.format("%.0f", project.saturation))
-            SettingSlider("Rotation", project.rotation, 0f..360f, fg, panel, { onChange(project.copy(rotation = it)) }, String.format("%.0f°", project.rotation))
-            SettingSlider("Playback speed", project.speed, 0.5f..2f, fg, panel, { onChange(project.copy(speed = it)) }, String.format("%.1f×", project.speed))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Mute original audio", color = fg, modifier = Modifier.weight(1f))
-                Switch(checked = project.muted, onCheckedChange = { onChange(project.copy(muted = it)) })
+            OutlinedTextField(value = project.teacher, onValueChange = { onChange(project.copy(teacher = it)) }, label = { Text("C  •  Teacher name") }, modifier = Modifier.fillMaxWidth(), singleLine = true, colors = OutlinedTextFieldDefaults.colors(focusedTextColor = fg, unfocusedTextColor = fg, focusedContainerColor = field, unfocusedContainerColor = field))
+
+            Text("TIMELINE", color = fg, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 18.dp, bottom = 4.dp))
+            Row(Modifier.fillMaxWidth().background(panel, RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalButton(onClick = { isPlaying = !isPlaying }, enabled = project.video.isNotBlank()) {
+                    Text(if (isPlaying) "Ⅱ  Pause" else "▶  Play")
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(formatTime(playheadMs), color = fg, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                Text(formatTime(durationMs), color = fg.copy(alpha = .65f), fontSize = 12.sp)
             }
-            Text("TRIM VIDEO (milliseconds)", color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = project.trimStartMs.toString(), onValueChange = { value -> value.toLongOrNull()?.let { onChange(project.copy(trimStartMs = it.coerceAtLeast(0L))) } }, label = { Text("Start ms") }, modifier = Modifier.weight(1f), singleLine = true)
-                OutlinedTextField(value = project.trimEndMs.toString(), onValueChange = { value -> value.toLongOrNull()?.let { onChange(project.copy(trimEndMs = it.coerceAtLeast(0L))) } }, label = { Text("End ms (0 = full)") }, modifier = Modifier.weight(1f), singleLine = true)
+            Slider(
+                value = playheadMs.coerceIn(0L, durationMs.coerceAtLeast(1L)).toFloat(),
+                onValueChange = { playheadMs = it.toLong() },
+                onValueChangeFinished = { },
+                valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
+                enabled = durationMs > 0L && project.video.isNotBlank()
+            )
+            TimelineRow("VIDEO", if (project.video.isBlank()) "Import a video to begin" else "Video track • ${formatTime(durationMs)}", fg, panel)
+            TimelineRow("B  DESCRIPTION", if (project.description.isBlank()) "Empty" else "Template text • full duration", fg, panel)
+            TimelineRow("C  TEACHER", if (project.teacher.isBlank()) "Empty" else "Teacher label • full duration", fg, panel)
+            if (project.overlays.isNotEmpty()) project.overlays.forEach { clip ->
+                TimelineRow("TEXT", "${clip.text} • ${formatTime(clip.startMs)}–${formatTime(clip.endMs)}", fg, panel)
             }
-            OutlinedButton(onClick = { onChange(project.copy(zoom = 1f, panX = 0f, panY = 0f, crop = 0f, brightness = 0f, contrast = 0f, saturation = 0f, rotation = 0f, speed = 1f, volume = 1f, muted = false)) }, modifier = Modifier.fillMaxWidth()) { Text("Reset adjustments") }
-            Text("TIMELINE", color = fg, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
-            TimelineRow("VIDEO", if (project.video.isBlank()) "No video imported" else "Source video ready", fg, panel)
-            TimelineRow("B  DESCRIPTION", if (project.description.isBlank()) "No description" else "Visible throughout video", fg, panel)
-            TimelineRow("C  TEACHER", if (project.teacher.isBlank()) "No teacher name" else "Visible throughout video", fg, panel)
-            project.overlays.forEach { clip ->
-                OverlayTrackEditor(clip, fg, panel,
-                    onUpdate = { changed -> onChange(project.copy(overlays = project.overlays.map { if (it.id == clip.id) changed else it })) },
-                    onDelete = { onChange(project.copy(overlays = project.overlays.filterNot { it.id == clip.id })) })
+
+            Text("EDITING TOOLS", color = fg, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp, bottom = 7.dp))
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                tools.forEach { tool ->
+                    FilterChip(selected = selectedTool == tool, onClick = {
+                        selectedTool = tool
+                        if (tool == "Reset") onChange(project.copy(crop = 0f, zoom = 1f, panX = 0f, panY = 0f, brightness = 0f, contrast = 0f, saturation = 0f, rotation = 0f, speed = 1f, volume = 1f, muted = false))
+                    }, label = { Text(tool) })
+                }
+            }
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp).background(panel, RoundedCornerShape(12.dp)).padding(12.dp)) {
+                when (selectedTool) {
+                    "Trim" -> {
+                        val total = durationMs.coerceAtLeast(1L)
+                        val startValue = project.trimStartMs.coerceIn(0L, total - 1L).toFloat()
+                        val endValue = (if (project.trimEndMs > 0L) project.trimEndMs else total).coerceIn(startValue.toLong() + 1L, total).toFloat()
+                        Text("Set the exact section to export", color = fg, fontWeight = FontWeight.SemiBold)
+                        Text("${formatTime(startValue.toLong())}  —  ${formatTime(endValue.toLong())}", color = fg.copy(alpha = .7f), fontSize = 12.sp)
+                        RangeSlider(value = startValue..endValue, onValueChange = { range ->
+                            val safeStart = range.start.toLong().coerceAtLeast(0L)
+                            val safeEnd = range.endInclusive.toLong().coerceAtLeast(safeStart + 1L)
+                            onChange(project.copy(trimStartMs = safeStart, trimEndMs = safeEnd))
+                        }, valueRange = 0f..total.toFloat(), enabled = durationMs > 0L)
+                        OutlinedButton(onClick = { onChange(project.copy(trimStartMs = 0L, trimEndMs = durationMs)) }, enabled = durationMs > 0L, modifier = Modifier.fillMaxWidth()) { Text("Use full video") }
+                    }
+                    "Crop" -> SettingSlider("Crop amount", project.crop, 0f..0.4f, fg, panel, { onChange(project.copy(crop = it)) }, "${(project.crop * 100).toInt()}%")
+                    "Zoom" -> SettingSlider("Pinch zoom", project.zoom, 1f..4f, fg, panel, { onChange(project.copy(zoom = it)) }, String.format("%.2f×", project.zoom))
+                    "Lighting" -> SettingSlider("Brightness", project.brightness, -1f..1f, fg, panel, { onChange(project.copy(brightness = it)) }, String.format("%.2f", project.brightness))
+                    "Contrast" -> SettingSlider("Contrast", project.contrast, -1f..1f, fg, panel, { onChange(project.copy(contrast = it)) }, String.format("%.2f", project.contrast))
+                    "Colour" -> SettingSlider("Saturation", project.saturation, -100f..100f, fg, panel, { onChange(project.copy(saturation = it)) }, "${project.saturation.toInt()}")
+                    "Rotate" -> SettingSlider("Rotation", project.rotation, 0f..360f, fg, panel, { onChange(project.copy(rotation = it)) }, "${project.rotation.toInt()}°")
+                    "Speed" -> SettingSlider("Playback speed", project.speed, 0.5f..2f, fg, panel, { onChange(project.copy(speed = it)) }, String.format("%.1f×", project.speed))
+                    "Audio" -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Mute original video audio", color = fg, modifier = Modifier.weight(1f))
+                        Switch(checked = project.muted, onCheckedChange = { onChange(project.copy(muted = it)) })
+                    }
+                    else -> Text("Select an editing tool.", color = fg)
+                }
             }
             Spacer(Modifier.height(12.dp))
         }
-        Column(Modifier.fillMaxWidth().background(panel).padding(12.dp)) {
+        Column(Modifier.fillMaxWidth().background(panel).padding(horizontal = 12.dp, vertical = 10.dp)) {
             if (exportMessage.isNotBlank()) Text(exportMessage, color = fg, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
-            Button(onClick = onExport, enabled = !exporting, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) {
+            Button(onClick = onExport, enabled = !exporting && project.video.isNotBlank(), modifier = Modifier.fillMaxWidth().height(54.dp), colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) {
                 Text(if (exporting) "RENDERING MP4…" else "EXPORT  •  MP4", fontWeight = FontWeight.Bold)
             }
         }
     }
-    if (showOverlayDialog) AlertDialog(
-        onDismissRequest = { showOverlayDialog = false }, title = { Text("Add timeline text") },
-        text = { OutlinedTextField(value = newOverlay, onValueChange = { newOverlay = it }, label = { Text("Text") }) },
-        confirmButton = { TextButton(onClick = { if (newOverlay.isNotBlank()) onChange(project.copy(overlays = project.overlays + TextClip(text = newOverlay, startMs = 0, endMs = 5000))); newOverlay = ""; showOverlayDialog = false }) { Text("Add") } },
-        dismissButton = { TextButton(onClick = { showOverlayDialog = false }) { Text("Cancel") } }
-    )
+}
+
+private fun formatTime(ms: Long): String {
+    val totalSeconds = ms.coerceAtLeast(0L) / 1000L
+    return String.format("%02d:%02d", totalSeconds / 60L, totalSeconds % 60L)
 }
 
 @Composable
