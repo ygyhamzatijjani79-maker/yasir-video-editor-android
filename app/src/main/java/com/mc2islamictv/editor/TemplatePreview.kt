@@ -1,6 +1,10 @@
 package com.mc2islamictv.editor
 
 import android.net.Uri
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.view.TextureView
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
@@ -26,9 +30,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.C
-import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.delay
@@ -71,8 +74,8 @@ fun MC2TemplatePreview(
             repeatMode = ExoPlayer.REPEAT_MODE_ONE
             setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+                    .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MOVIE)
                     .build(),
                 true
             )
@@ -82,18 +85,9 @@ fun MC2TemplatePreview(
             playWhenReady = true
         }
     }
-    LaunchedEffect(player, zoom, panX, panY, crop, brightness, contrast, saturation, rotation) {
-        player?.setVideoEffects(
-            MC2ExportRenderer.buildSourceVideoEffects(
-                Project(
-                    name = "Preview", description = description, teacher = teacher,
-                    zoom = zoom, panX = panX, panY = panY, crop = crop,
-                    brightness = brightness, contrast = contrast,
-                    saturation = saturation, rotation = rotation
-                )
-            )
-        )
-    }
+    // Preview adjustments are applied directly to TextureView. Rebuilding Media3's
+    // video-effects pipeline on every slider movement can stall playback and freeze
+    // the playhead. TextureView transforms keep playback/audio/timeline continuous.
     LaunchedEffect(player, isPlaying, speed, volume, muted) {
         player?.playbackParameters = androidx.media3.common.PlaybackParameters(speed.coerceIn(0.5f, 2f))
         player?.volume = if (muted) 0f else volume.coerceIn(0f, 1f)
@@ -152,6 +146,21 @@ fun MC2TemplatePreview(
                         player.setVideoTextureView(view)
                         view.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                     } },
+                    update = { view ->
+                        applyPreviewTransform(
+                            view = view,
+                            videoWidth = player.videoSize.width,
+                            videoHeight = player.videoSize.height,
+                            zoom = zoom,
+                            panX = panX,
+                            panY = panY,
+                            crop = crop,
+                            rotation = rotation,
+                            brightness = brightness,
+                            contrast = contrast,
+                            saturation = saturation
+                        )
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -159,4 +168,57 @@ fun MC2TemplatePreview(
         Image(bitmap = template, contentDescription = "MC2 Islamic animated template", contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
 
     }
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+private fun applyPreviewTransform(
+    view: TextureView,
+    videoWidth: Int,
+    videoHeight: Int,
+    zoom: Float,
+    panX: Float,
+    panY: Float,
+    crop: Float,
+    rotation: Float,
+    brightness: Float,
+    contrast: Float,
+    saturation: Float
+) {
+    val vw = view.width.toFloat()
+    val vh = view.height.toFloat()
+    if (vw <= 0f || vh <= 0f) return
+
+    val sourceW = videoWidth.takeIf { it > 0 }?.toFloat() ?: vw
+    val sourceH = videoHeight.takeIf { it > 0 }?.toFloat() ?: vh
+    val angle = Math.toRadians(rotation.toDouble())
+    val rotatedW = kotlin.math.abs(sourceW * kotlin.math.cos(angle)) +
+        kotlin.math.abs(sourceH * kotlin.math.sin(angle))
+    val rotatedH = kotlin.math.abs(sourceH * kotlin.math.cos(angle)) +
+        kotlin.math.abs(sourceW * kotlin.math.sin(angle))
+    val baseScale = max(vw / rotatedW, vh / rotatedH)
+    val userScale = (zoom.coerceIn(1f, 4f) / (1f - crop.coerceIn(0f, 0.4f))).coerceIn(1f, 7f)
+    val scale = baseScale * userScale
+    val matrix = Matrix().apply {
+        setScale(scale, scale, vw / 2f, vh / 2f)
+        postRotate(rotation, vw / 2f, vh / 2f)
+        postTranslate(panX.coerceIn(-1f, 1f) * vw * 0.45f, panY.coerceIn(-1f, 1f) * vh * 0.45f)
+    }
+    view.setTransform(matrix)
+
+    val contrastFactor = 1f + contrast.coerceIn(-1f, 1f)
+    val brightnessOffset = brightness.coerceIn(-1f, 1f) * 255f
+    val color = ColorMatrix().apply {
+        setSaturation((1f + saturation.coerceIn(-100f, 100f) / 100f).coerceIn(0f, 2f))
+        val adjustment = ColorMatrix(floatArrayOf(
+            contrastFactor, 0f, 0f, 0f, brightnessOffset + 128f * (1f - contrastFactor),
+            0f, contrastFactor, 0f, 0f, brightnessOffset + 128f * (1f - contrastFactor),
+            0f, 0f, contrastFactor, 0f, brightnessOffset + 128f * (1f - contrastFactor),
+            0f, 0f, 0f, 1f, 0f
+        ))
+        postConcat(adjustment)
+    }
+    val paint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(color)
+    }
+    view.setLayerPaint(paint)
 }

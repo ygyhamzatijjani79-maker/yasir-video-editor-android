@@ -243,7 +243,16 @@ private fun EditorScreen(
                 tools.forEach { tool ->
                     FilterChip(selected = selectedTool == tool, onClick = {
                         selectedTool = tool
-                        if (tool == "Reset") onChange(project.copy(crop = 0f, zoom = 1f, panX = 0f, panY = 0f, brightness = 0f, contrast = 0f, saturation = 0f, rotation = 0f, speed = 1f, volume = 1f, muted = false))
+                        if (tool == "Reset") {
+                            onChange(project.copy(
+                                crop = 0f, zoom = 1f, panX = 0f, panY = 0f,
+                                brightness = 0f, contrast = 0f, saturation = 0f,
+                                rotation = 0f, speed = 1f, volume = 1f, muted = false
+                            ))
+                            isPlaying = false
+                            seekRequestMs = 0L
+                            playheadMs = 0L
+                        }
                     }, label = { Text(tool) })
                 }
             }
@@ -269,9 +278,13 @@ private fun EditorScreen(
                     "Colour" -> SettingSlider("Saturation", project.saturation, -100f..100f, fg, panel, { onChange(project.copy(saturation = it)) }, "${project.saturation.toInt()}")
                     "Rotate" -> SettingSlider("Rotation", project.rotation, 0f..360f, fg, panel, { onChange(project.copy(rotation = it)) }, "${project.rotation.toInt()}°")
                     "Speed" -> SettingSlider("Playback speed", project.speed, 0.5f..2f, fg, panel, { onChange(project.copy(speed = it)) }, String.format("%.1f×", project.speed))
-                    "Audio" -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Mute original video audio", color = fg, modifier = Modifier.weight(1f))
-                        Switch(checked = project.muted, onCheckedChange = { onChange(project.copy(muted = it)) })
+                    "Audio" -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Mute original video audio", color = fg, modifier = Modifier.weight(1f))
+                            Switch(checked = project.muted, onCheckedChange = { onChange(project.copy(muted = it)) })
+                        }
+                        SettingSlider("Volume", project.volume, 0f..1f, fg, panel,
+                            { onChange(project.copy(volume = it)) }, "${(project.volume * 100).toInt()}%")
                     }
                     else -> Text("Select an editing tool.", color = fg)
                 }
