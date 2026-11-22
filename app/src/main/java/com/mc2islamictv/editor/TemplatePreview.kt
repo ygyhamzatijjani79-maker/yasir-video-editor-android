@@ -195,7 +195,7 @@ private fun applyPreviewTransform(
         kotlin.math.abs(sourceH * kotlin.math.sin(angle))
     val rotatedH = kotlin.math.abs(sourceH * kotlin.math.cos(angle)) +
         kotlin.math.abs(sourceW * kotlin.math.sin(angle))
-    val baseScale = max(vw / rotatedW, vh / rotatedH)
+    val baseScale = max(vw / rotatedW.toFloat(), vh / rotatedH.toFloat())
     val userScale = (zoom.coerceIn(1f, 4f) / (1f - crop.coerceIn(0f, 0.4f))).coerceIn(1f, 7f)
     val scale = baseScale * userScale
     val matrix = Matrix().apply {
