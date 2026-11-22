@@ -75,9 +75,9 @@ internal object MC2ExportRenderer {
             val lb = 0.072f
             val inverse = 1f - saturation
             val s = floatArrayOf(
-                lr + inverse * lr, inverse * lg, inverse * lb, 0f,
-                inverse * lr, lg + inverse * lg, inverse * lb, 0f,
-                inverse * lr, inverse * lg, lb + inverse * lb, 0f,
+                lr * inverse + saturation, inverse * lg, inverse * lb, 0f,
+                inverse * lr, lg * inverse + saturation, inverse * lb, 0f,
+                inverse * lr, inverse * lg, lb * inverse + saturation, 0f,
                 0f, 0f, 0f, 1f
             )
             val contrast = 1f + project.contrast.coerceIn(-1f, 1f)
