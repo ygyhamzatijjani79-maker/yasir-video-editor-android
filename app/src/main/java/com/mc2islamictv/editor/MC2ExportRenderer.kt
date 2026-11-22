@@ -54,12 +54,12 @@ internal object MC2ExportRenderer {
         return effects
     }
 
-    fun createTemplateBitmap(project: Project, width: Int = SIZE, height: Int = SIZE): Bitmap {
+    fun createTemplateBitmap(project: Project, width: Int = SIZE, height: Int = SIZE, phase: Float = 0f): Bitmap {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.save()
         canvas.scale(width / SIZE.toFloat(), height / SIZE.toFloat())
-        drawTemplate(canvas, project, 0f)
+        drawTemplate(canvas, project, phase)
         canvas.restore()
         return bitmap
     }
