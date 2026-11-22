@@ -42,7 +42,6 @@ import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.DefaultEncoderFactory
-import androidx.media3.transformer.DefaultDecoderFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -393,14 +392,9 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
             if (output.exists()) output.delete()
             val encoderFactory = DefaultEncoderFactory.Builder(this@exportMp4)
                 .setEnableFallback(true)
-                .setEnableFormatFallback(true)
-                .build()
-            val decoderFactory = DefaultDecoderFactory.Builder(this@exportMp4)
-                .setEnableDecoderFallback(true)
                 .build()
             val transformer = Transformer.Builder(this@exportMp4)
                 .setEncoderFactory(encoderFactory)
-                .setDecoderFactory(decoderFactory)
                 .build()
             transformer.addListener(object : Transformer.Listener {
                 override fun onCompleted(
