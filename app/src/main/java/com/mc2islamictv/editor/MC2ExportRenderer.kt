@@ -51,8 +51,19 @@ internal object MC2ExportRenderer {
         val userScale = (project.zoom.coerceIn(1f, 4f) /
             (1f - project.crop.coerceIn(0f, 0.4f))).coerceIn(1f, 7f)
         val radians = Math.toRadians(-project.rotation.toDouble())
-        val cos = kotlin.math.cos(radians).toFloat() * userScale
-        val sin = kotlin.math.sin(radians).toFloat() * userScale
+        val rawCos = kotlin.math.cos(radians).toFloat()
+        val rawSin = kotlin.math.sin(radians).toFloat()
+        // The preview computes its base scale from the rotated source bounds.
+        // Reproduce that fill correction after the aperture crop.
+        val absCos = kotlin.math.abs(rawCos)
+        val absSin = kotlin.math.abs(rawSin)
+        val rotationFit = maxOf(
+            aspect / (aspect * absCos + absSin).coerceAtLeast(0.0001f),
+            1f / (absCos + aspect * absSin).coerceAtLeast(0.0001f)
+        )
+        val scale = userScale * rotationFit
+        val cos = rawCos * scale
+        val sin = rawSin * scale
         val panX = project.panX.coerceIn(-1f, 1f) * 0.90f
         val panY = -project.panY.coerceIn(-1f, 1f) * 0.90f
         return MatrixTransformation { _ ->
