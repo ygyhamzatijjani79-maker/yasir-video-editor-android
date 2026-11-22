@@ -232,19 +232,19 @@ internal object MC2ExportRenderer {
 }
 
 @UnstableApi
-private class AnimatedTemplateOverlay(private val project: Project) : CanvasOverlay(true) {
-    // Match the actual video-frame texture dimensions. A fixed 1080x1080 overlay can
-    // be clipped/mis-sized by Transformer when the source is portrait or landscape.
-    // Draw a centered square into the full-frame canvas so the later 1:1 presentation
-    // crop retains the same square template shown in the editor preview.
+private class AnimatedTemplateOverlay(private val project: Project) : CanvasOverlay(false) {
+    // The final composition is deliberately square (1:1). Use a fixed square
+    // overlay canvas so portrait/landscape source dimensions cannot resize or
+    // crop the template layer differently from the square editor preview.
+    init {
+        setCanvasSize(1080, 1080)
+    }
+
     override fun onDraw(canvas: Canvas, presentationTimeUs: Long) {
         val phase = (presentationTimeUs / 1_000_000f / 9f) % 1f
-        val side = minOf(canvas.width, canvas.height).toFloat()
-        val left = (canvas.width - side) / 2f
-        val top = (canvas.height - side) / 2f
+        canvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
         canvas.save()
-        canvas.translate(left, top)
-        canvas.scale(side / 1080f, side / 1080f)
+        canvas.scale(canvas.width / 1080f, canvas.height / 1080f)
         MC2ExportRenderer.drawTemplate(canvas, project, phase)
         canvas.restore()
     }
