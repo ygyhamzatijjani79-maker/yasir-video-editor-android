@@ -173,6 +173,7 @@ private fun EditorScreen(
     var isPlaying by remember(project.id, project.video) { mutableStateOf(true) }
     var playheadMs by remember(project.id, project.video) { mutableLongStateOf(0L) }
     var seekRequestMs by remember(project.id, project.video) { mutableLongStateOf(-1L) }
+    var isScrubbing by remember(project.id, project.video) { mutableStateOf(false) }
     var durationMs by remember(project.id, project.video) { mutableLongStateOf(0L) }
     val bg = if (darkMode) Color(0xFF101010) else Color.White
     val fg = if (darkMode) Color.White else Color(0xFF111111)
@@ -195,7 +196,7 @@ private fun EditorScreen(
                 brightness = project.brightness, contrast = project.contrast, saturation = project.saturation,
                 rotation = project.rotation, speed = project.speed, volume = project.volume, muted = project.muted,
                 isPlaying = isPlaying,
-                onPlaybackUpdate = { position, duration -> playheadMs = position; durationMs = duration },
+                onPlaybackUpdate = { position, duration -> if (!isScrubbing) playheadMs = position; durationMs = duration },
                 seekPositionMs = seekRequestMs,
                 onTransformChange = { z, x, y -> onChange(project.copy(zoom = z, panX = x, panY = y)) }
             )
@@ -220,8 +221,8 @@ private fun EditorScreen(
             }
             Slider(
                 value = playheadMs.coerceIn(0L, durationMs.coerceAtLeast(1L)).toFloat(),
-                onValueChange = { playheadMs = it.toLong() },
-                onValueChangeFinished = { seekRequestMs = playheadMs },
+                onValueChange = { isScrubbing = true; playheadMs = it.toLong() },
+                onValueChangeFinished = { seekRequestMs = playheadMs; isScrubbing = false },
                 valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
                 enabled = durationMs > 0L && project.video.isNotBlank()
             )
