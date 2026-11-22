@@ -64,6 +64,7 @@ fun MC2TemplatePreview(
     val latestPanX by rememberUpdatedState(panX)
     val latestPanY by rememberUpdatedState(panY)
     val latestTransform by rememberUpdatedState(onTransformChange)
+    var playerPositionMs by remember(videoUri) { mutableLongStateOf(0L) }
 
     val player = remember(videoUri) {
         if (videoUri.isBlank()) null else ExoPlayer.Builder(context).build().apply {
@@ -87,19 +88,16 @@ fun MC2TemplatePreview(
             onPlaybackUpdate(0L, 0L)
         } else {
             while (isActive) {
-                onPlaybackUpdate(player.currentPosition.coerceAtLeast(0L), player.duration.takeIf { it > 0 } ?: 0L)
-                delay(200)
+                playerPositionMs = player.currentPosition.coerceAtLeast(0L)
+                onPlaybackUpdate(playerPositionMs, player.duration.takeIf { it > 0 } ?: 0L)
+                delay(100)
             }
         }
     }
     DisposableEffect(player) { onDispose { player?.release() } }
 
-    val animation = rememberInfiniteTransition(label = "template-motion")
-    val phase by animation.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(9000), RepeatMode.Restart),
-        label = "template-colour-cycle"
-    )
+    // Animation follows the real video playhead and freezes when playback pauses.
+    val phase = (playerPositionMs / 9_000f) % 1f
     val paletteStep = (phase * 3f).toInt() % 3
     val template = remember(description, teacher, paletteStep) {
         MC2ExportRenderer.createTemplateBitmap(
@@ -161,11 +159,25 @@ fun MC2TemplatePreview(
         Image(bitmap = template, contentDescription = "MC2 Islamic animated template", contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
         Canvas(Modifier.fillMaxSize()) {
             val cycle = (0.5f + 0.5f * kotlin.math.sin(phase * (2f * Math.PI).toFloat())).coerceIn(0f, 1f)
-            val accent = androidx.compose.ui.graphics.lerp(Color(0xFFDCAA23), Color(0xFF65D9E8), cycle)
-            val pulse = 0.78f + 0.22f * kotlin.math.sin(phase * (4f * Math.PI).toFloat())
-            drawRoundRect(accent.copy(alpha = 0.85f * pulse), style = Stroke(width = 3.dp.toPx()), cornerRadius = androidx.compose.ui.geometry.CornerRadius(18.dp.toPx()))
-            rotate(phase * 360f, pivot = androidx.compose.ui.geometry.Offset(size.width * 0.19f, size.height * 0.65f)) {
-                drawCircle(accent, radius = size.width * 0.027f, center = androidx.compose.ui.geometry.Offset(size.width * 0.19f, size.height * 0.65f), style = Stroke(width = 3.dp.toPx()))
+            val accent = androidx.compose.ui.graphics.lerp(Color(0xFFFFD34E), Color(0xFF75F2FF), cycle)
+            val pulse = 0.62f + 0.38f * ((kotlin.math.sin(phase * (6f * Math.PI).toFloat()) + 1f) / 2f)
+            drawRoundRect(accent.copy(alpha = 0.88f * pulse), style = Stroke(width = 3.dp.toPx()), cornerRadius = androidx.compose.ui.geometry.CornerRadius(18.dp.toPx()))
+            val flowers = listOf(
+                androidx.compose.ui.geometry.Offset(size.width * 0.065f, size.height * 0.075f),
+                androidx.compose.ui.geometry.Offset(size.width * 0.935f, size.height * 0.075f),
+                androidx.compose.ui.geometry.Offset(size.width * 0.065f, size.height * 0.925f),
+                androidx.compose.ui.geometry.Offset(size.width * 0.935f, size.height * 0.925f)
+            )
+            flowers.forEachIndexed { index, center ->
+                rotate(phase * 360f * if (index % 2 == 0) 1f else -1f, pivot = center) {
+                    drawCircle(accent.copy(alpha = 0.18f * pulse), radius = size.width * 0.055f, center = center)
+                    repeat(6) { petal ->
+                        rotate(petal * 60f, pivot = center) {
+                            drawCircle(accent.copy(alpha = 0.92f * pulse), radius = size.width * 0.014f, center = androidx.compose.ui.geometry.Offset(center.x, center.y - size.width * 0.027f))
+                        }
+                    }
+                    drawCircle(Color(0xFFFFF2B2), radius = size.width * 0.009f, center = center)
+                }
             }
         }
     }
