@@ -1,8 +1,5 @@
 package com.mc2islamictv.editor
 
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
-import android.graphics.Paint
 import android.net.Uri
 import android.view.TextureView
 import androidx.compose.animation.core.RepeatMode
@@ -24,7 +21,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -32,12 +28,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.max
 
 @Composable
+@OptIn(UnstableApi::class)
 fun MC2TemplatePreview(
     videoUri: String,
     description: String,
@@ -70,10 +68,22 @@ fun MC2TemplatePreview(
         if (videoUri.isBlank()) null else ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.parse(videoUri)))
             repeatMode = ExoPlayer.REPEAT_MODE_ONE
-            videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+            setVideoEffects(emptyList())
             prepare()
             playWhenReady = true
         }
+    }
+    LaunchedEffect(player, zoom, panX, panY, crop, brightness, contrast, saturation, rotation) {
+        player?.setVideoEffects(
+            MC2ExportRenderer.buildSourceVideoEffects(
+                Project(
+                    name = "Preview", description = description, teacher = teacher,
+                    zoom = zoom, panX = panX, panY = panY, crop = crop,
+                    brightness = brightness, contrast = contrast,
+                    saturation = saturation, rotation = rotation
+                )
+            )
+        )
     }
     LaunchedEffect(player, isPlaying, speed, volume, muted) {
         player?.playbackParameters = androidx.media3.common.PlaybackParameters(speed.coerceIn(0.5f, 2f))
@@ -128,32 +138,12 @@ fun MC2TemplatePreview(
             contentAlignment = Alignment.Center
         ) {
             if (player != null) {
-                val totalCrop = (crop.coerceIn(0f, 0.4f) + ((1f - (1f / zoom.coerceIn(1f, 4f))) / 2f)).coerceIn(0f, 0.46f)
-                val totalScale = 1f / (1f - 2f * totalCrop).coerceAtLeast(0.08f)
                 AndroidView(
                     factory = { ctx -> TextureView(ctx).also { view ->
                         player.setVideoTextureView(view)
                         view.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                     } },
-                    update = { view ->
-                        val matrix = ColorMatrix()
-                        val sat = ColorMatrix().apply { setSaturation((1f + saturation / 100f).coerceIn(0f, 2f)) }
-                        matrix.postConcat(sat)
-                        val c = (1f + contrast).coerceIn(0f, 2f)
-                        val b = brightness.coerceIn(-1f, 1f) * 255f
-                        val contrastMatrix = ColorMatrix(floatArrayOf(
-                            c,0f,0f,0f,b, 0f,c,0f,0f,b, 0f,0f,c,0f,b, 0f,0f,0f,1f,0f
-                        ))
-                        matrix.postConcat(contrastMatrix)
-                        view.setLayerPaint(Paint().apply { colorFilter = ColorMatrixColorFilter(matrix) })
-                    },
-                    modifier = Modifier.fillMaxSize().graphicsLayer {
-                        scaleX = totalScale
-                        scaleY = totalScale
-                        translationX = panX * size.width * 0.45f
-                        translationY = panY * size.height * 0.45f
-                        rotationZ = rotation
-                    }
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }

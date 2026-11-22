@@ -3,6 +3,7 @@ package com.mc2islamictv.editor
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -13,11 +14,10 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Brightness
 import androidx.media3.effect.CanvasOverlay
 import androidx.media3.effect.Contrast
-import androidx.media3.effect.Crop
+import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
-import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
 
@@ -28,28 +28,60 @@ internal object MC2ExportRenderer {
     private val black = Color.BLACK
     private val white = Color.WHITE
 
+    private const val VIDEO_APERTURE_RATIO = 0.575f / 0.70f
+    private const val VIDEO_APERTURE_SCALE = 0.70f
+    private const val VIDEO_APERTURE_CENTER_X = 0.38f + 0.575f / 2f
+    private const val VIDEO_APERTURE_CENTER_Y = 1f - (0.055f + 0.70f / 2f)
+
+    /** Shared by the live preview and the MP4 renderer so adjustments stay identical. */
+    fun buildSourceVideoEffects(project: Project): List<androidx.media3.common.Effect> {
+        val effects = mutableListOf<androidx.media3.common.Effect>()
+        val totalCrop = (project.crop.coerceIn(0f, 0.4f) +
+            ((1f - (1f / project.zoom.coerceIn(1f, 4f))) / 2f)).coerceIn(0f, 0.46f)
+        val scale = 1f / (1f - 2f * totalCrop).coerceAtLeast(0.08f)
+        val panX = project.panX.coerceIn(-1f, 1f) * 0.90f
+        val panY = -project.panY.coerceIn(-1f, 1f) * 0.90f
+        val radians = Math.toRadians(-project.rotation.toDouble())
+        val cos = kotlin.math.cos(radians).toFloat() * scale
+        val sin = kotlin.math.sin(radians).toFloat() * scale
+        effects += MatrixTransformation { _ ->
+            Matrix().apply {
+                setValues(floatArrayOf(
+                    cos, -sin, panX,
+                    sin, cos, panY,
+                    0f, 0f, 1f
+                ))
+            }
+        }
+        if (project.brightness != 0f) effects += Brightness(project.brightness.coerceIn(-1f, 1f))
+        if (project.contrast != 0f) effects += Contrast(project.contrast.coerceIn(-1f, 1f))
+        if (project.saturation != 0f) effects += HslAdjustment.Builder()
+            .adjustSaturation(project.saturation.coerceIn(-100f, 100f)).build()
+        return effects
+    }
+
     fun buildEffects(project: Project): List<androidx.media3.common.Effect> {
-        // The source is first converted to a square frame; the full-screen template is then
-        // composited over it on every encoded frame, with the clear aperture exposing the video.
         val layers = mutableListOf<androidx.media3.effect.TextureOverlay>()
         layers += AnimatedTemplateOverlay(project)
         if (project.overlays.isNotEmpty()) layers += TimedTextOverlay(project.overlays)
 
         val effects = mutableListOf<androidx.media3.common.Effect>()
-        effects += Presentation.createForAspectRatio(1f, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP)
-        val totalCrop = (project.crop.coerceIn(0f, 0.4f) +
-            ((1f - (1f / project.zoom.coerceIn(1f, 4f))) / 2f)).coerceIn(0f, 0.46f)
-        val px = (-project.panX.coerceIn(-1f, 1f) * totalCrop).coerceIn(-totalCrop, totalCrop)
-        val py = (project.panY.coerceIn(-1f, 1f) * totalCrop).coerceIn(-totalCrop, totalCrop)
-        val left = (-1f + 2f * totalCrop + 2f * px).coerceIn(-1f, 0.92f)
-        val right = (1f - 2f * totalCrop + 2f * px).coerceIn(left + 0.08f, 1f)
-        val bottom = (-1f + 2f * totalCrop + 2f * py).coerceIn(-1f, 0.92f)
-        val top = (1f - 2f * totalCrop + 2f * py).coerceIn(bottom + 0.08f, 1f)
-        if (totalCrop > 0f || project.panX != 0f || project.panY != 0f) effects += Crop(left, right, bottom, top)
-        if (project.rotation != 0f) effects += ScaleAndRotateTransformation.Builder().setRotationDegrees(project.rotation).build()
-        if (project.brightness != 0f) effects += Brightness(project.brightness.coerceIn(-1f, 1f))
-        if (project.contrast != 0f) effects += Contrast(project.contrast.coerceIn(-1f, 1f))
-        if (project.saturation != 0f) effects += HslAdjustment.Builder().adjustSaturation(project.saturation.coerceIn(-100f, 100f)).build()
+        // First crop to the same video-window shape as the editor preview. Then fit that
+        // window into the square output and place it exactly behind the template aperture.
+        effects += Presentation.createForAspectRatio(
+            VIDEO_APERTURE_RATIO, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
+        )
+        effects += buildSourceVideoEffects(project)
+        effects += Presentation.createForAspectRatio(1f, Presentation.LAYOUT_SCALE_TO_FIT)
+        effects += MatrixTransformation { _ ->
+            Matrix().apply {
+                setValues(floatArrayOf(
+                    VIDEO_APERTURE_SCALE, 0f, VIDEO_APERTURE_CENTER_X,
+                    0f, VIDEO_APERTURE_SCALE, VIDEO_APERTURE_CENTER_Y,
+                    0f, 0f, 1f
+                ))
+            }
+        }
         effects += OverlayEffect(layers)
         return effects
     }
