@@ -94,15 +94,19 @@ fun MC2TemplatePreview(
     }
     DisposableEffect(player) { onDispose { player?.release() } }
 
-    val template = remember(description, teacher) {
-        MC2ExportRenderer.createTemplateBitmap(Project(name = "Preview", description = description, teacher = teacher)).asImageBitmap()
-    }
     val animation = rememberInfiniteTransition(label = "template-motion")
     val phase by animation.animateFloat(
         initialValue = 0f, targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(9000), RepeatMode.Restart),
         label = "template-colour-cycle"
     )
+    val paletteStep = (phase * 3f).toInt() % 3
+    val template = remember(description, teacher, paletteStep) {
+        MC2ExportRenderer.createTemplateBitmap(
+            Project(name = "Preview", description = description, teacher = teacher),
+            phase = paletteStep / 3f
+        ).asImageBitmap()
+    }
 
     BoxWithConstraints(
         modifier = modifier.aspectRatio(1f).clip(RoundedCornerShape(18.dp)).background(Color(0xFF064226))
