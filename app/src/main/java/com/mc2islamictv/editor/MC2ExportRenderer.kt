@@ -70,7 +70,7 @@ internal object MC2ExportRenderer {
         // First crop to the same video-window shape as the editor preview. Then fit that
         // window into the square output and place it exactly behind the template aperture.
         effects += Presentation.createForAspectRatio(
-            VIDEO_APERTURE_RATIO, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
+            VIDEO_APERTURE_RATIO, Presentation.LAYOUT_SCALE_TO_FIT
         )
         effects += buildSourceVideoEffects(project)
         effects += Presentation.createForAspectRatio(1f, Presentation.LAYOUT_SCALE_TO_FIT)
