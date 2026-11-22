@@ -67,12 +67,13 @@ internal object MC2ExportRenderer {
         if (project.overlays.isNotEmpty()) layers += TimedTextOverlay(project.overlays)
 
         val effects = mutableListOf<androidx.media3.common.Effect>()
-        // First crop to the same video-window shape as the editor preview. Then fit that
-        // window into the square output and place it exactly behind the template aperture.
+        // Apply the exact same source transforms as the live preview BEFORE fitting
+        // the transformed source into the template aperture. This preserves zoom, pan,
+        // rotation and lighting instead of applying them to an already-cropped frame.
+        effects += buildSourceVideoEffects(project)
         effects += Presentation.createForAspectRatio(
             VIDEO_APERTURE_RATIO, Presentation.LAYOUT_SCALE_TO_FIT
         )
-        effects += buildSourceVideoEffects(project)
         effects += Presentation.createForAspectRatio(1f, Presentation.LAYOUT_SCALE_TO_FIT)
         effects += MatrixTransformation { _ ->
             Matrix().apply {
