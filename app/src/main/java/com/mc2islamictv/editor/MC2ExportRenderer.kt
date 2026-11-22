@@ -30,8 +30,9 @@ internal object MC2ExportRenderer {
 
     private const val VIDEO_APERTURE_RATIO = 0.575f / 0.70f
     private const val VIDEO_APERTURE_SCALE = 0.70f
-    private const val VIDEO_APERTURE_CENTER_X = 0.38f + 0.575f / 2f
-    private const val VIDEO_APERTURE_CENTER_Y = 1f - (0.055f + 0.70f / 2f)
+    // MatrixTransformation uses normalized device coordinates (-1..1), not 0..1.
+    private const val VIDEO_APERTURE_CENTER_X_NDC = 2f * (0.38f + 0.575f / 2f) - 1f
+    private const val VIDEO_APERTURE_CENTER_Y_NDC = 1f - 2f * (0.055f + 0.70f / 2f)
 
     /** Shared by the live preview and the MP4 renderer so adjustments stay identical. */
     fun buildSourceVideoEffects(project: Project): List<androidx.media3.common.Effect> {
@@ -76,8 +77,8 @@ internal object MC2ExportRenderer {
         effects += MatrixTransformation { _ ->
             Matrix().apply {
                 setValues(floatArrayOf(
-                    VIDEO_APERTURE_SCALE, 0f, VIDEO_APERTURE_CENTER_X,
-                    0f, VIDEO_APERTURE_SCALE, VIDEO_APERTURE_CENTER_Y,
+                    VIDEO_APERTURE_SCALE, 0f, VIDEO_APERTURE_CENTER_X_NDC,
+                    0f, VIDEO_APERTURE_SCALE, VIDEO_APERTURE_CENTER_Y_NDC,
                     0f, 0f, 1f
                 ))
             }
