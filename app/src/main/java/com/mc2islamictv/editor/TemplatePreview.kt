@@ -98,11 +98,12 @@ fun MC2TemplatePreview(
 
     // Animation follows the real video playhead and freezes when playback pauses.
     val phase = (playerPositionMs / 9_000f) % 1f
-    val paletteStep = (phase * 3f).toInt() % 3
-    val template = remember(description, teacher, paletteStep) {
+    val template = remember(description, teacher, phase) {
         MC2ExportRenderer.createTemplateBitmap(
             Project(name = "Preview", description = description, teacher = teacher),
-            phase = paletteStep / 3f
+            width = 540,
+            height = 540,
+            phase = phase
         ).asImageBitmap()
     }
 
