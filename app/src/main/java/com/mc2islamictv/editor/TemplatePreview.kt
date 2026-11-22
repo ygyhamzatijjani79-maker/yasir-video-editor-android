@@ -129,7 +129,8 @@ fun MC2TemplatePreview(
             contentAlignment = Alignment.Center
         ) {
             if (player != null) {
-                val totalScale = zoom.coerceIn(1f, 4f) / (1f - 2f * crop.coerceIn(0f, 0.4f)).coerceAtLeast(0.2f)
+                val totalCrop = (crop.coerceIn(0f, 0.4f) + ((1f - (1f / zoom.coerceIn(1f, 4f))) / 2f)).coerceIn(0f, 0.46f)
+                val totalScale = 1f / (1f - 2f * totalCrop).coerceAtLeast(0.08f)
                 AndroidView(
                     factory = { ctx -> TextureView(ctx).also { view ->
                         player.setVideoTextureView(view)
