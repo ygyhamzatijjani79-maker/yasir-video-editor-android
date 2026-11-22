@@ -249,9 +249,6 @@ private fun EditorScreen(
                                 brightness = 0f, contrast = 0f, saturation = 0f,
                                 rotation = 0f, speed = 1f, volume = 1f, muted = false
                             ))
-                            isPlaying = false
-                            seekRequestMs = 0L
-                            playheadMs = 0L
                         }
                     }, label = { Text(tool) })
                 }

@@ -170,7 +170,7 @@ fun MC2TemplatePreview(
     }
 }
 
-@androidx.annotation.OptIn(UnstableApi::class)
+@OptIn(UnstableApi::class)
 private fun applyPreviewTransform(
     view: TextureView,
     videoWidth: Int,
