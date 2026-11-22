@@ -170,7 +170,7 @@ private fun EditorScreen(
     darkMode: Boolean, onToggleTheme: () -> Unit
 ) {
     var selectedTool by remember { mutableStateOf("Trim") }
-    var isPlaying by remember(project.id, project.video) { mutableStateOf(true) }
+    var isPlaying by remember(project.id, project.video) { mutableStateOf(false) }
     var playheadMs by remember(project.id, project.video) { mutableLongStateOf(0L) }
     var seekRequestMs by remember(project.id, project.video) { mutableLongStateOf(-1L) }
     var isScrubbing by remember(project.id, project.video) { mutableStateOf(false) }
@@ -188,21 +188,25 @@ private fun EditorScreen(
             Text("MC2 STUDIO", color = fg, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
             TextButton(onClick = onToggleTheme) { Text(if (darkMode) "☼" else "◐", color = fg) }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp)) {
-            MC2TemplatePreview(
-                videoUri = project.video, description = project.description, teacher = project.teacher,
-                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
-                zoom = project.zoom, panX = project.panX, panY = project.panY, crop = project.crop,
-                brightness = project.brightness, contrast = project.contrast, saturation = project.saturation,
-                rotation = project.rotation, speed = project.speed, volume = project.volume, muted = project.muted,
-                isPlaying = isPlaying,
-                onPlaybackUpdate = { position, duration -> if (!isScrubbing) playheadMs = position; durationMs = duration },
-                seekPositionMs = seekRequestMs,
-                onTransformChange = { z, x, y -> onChange(project.copy(zoom = z, panX = x, panY = y)) }
-            )
+        // The 1:1 composition is pinned above the editor; only the controls below it scroll.
+        MC2TemplatePreview(
+            videoUri = project.video, description = project.description, teacher = project.teacher,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp).aspectRatio(1f),
+            zoom = project.zoom, panX = project.panX, panY = project.panY, crop = project.crop,
+            brightness = project.brightness, contrast = project.contrast, saturation = project.saturation,
+            rotation = project.rotation, speed = project.speed, volume = project.volume, muted = project.muted,
+            isPlaying = isPlaying,
+            onPlaybackUpdate = { position, duration ->
+                if (!isScrubbing) playheadMs = position
+                durationMs = duration
+            },
+            seekPositionMs = seekRequestMs,
+            onTransformChange = { z, x, y -> onChange(project.copy(zoom = z, panX = x, panY = y)) }
+        )
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(onClick = onPickVideo, modifier = Modifier.weight(1f).height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) { Text("＋  Import video") }
-                OutlinedButton(onClick = { onChange(project.copy(zoom = 1f, panX = 0f, panY = 0f)) }, modifier = Modifier.height(48.dp)) { Text("Reset view", color = fg) }
+                OutlinedButton(onClick = { onChange(project.copy(zoom = 1f, panX = 0f, panY = 0f, crop = 0f)) }, modifier = Modifier.height(48.dp)) { Text("Reset view", color = fg) }
             }
             Text("PROJECT CONTENT", color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 18.dp, bottom = 7.dp))
             OutlinedTextField(value = project.description, onValueChange = { onChange(project.copy(description = it)) }, label = { Text("B  •  Description") }, modifier = Modifier.fillMaxWidth(), minLines = 2, colors = OutlinedTextFieldDefaults.colors(focusedTextColor = fg, unfocusedTextColor = fg, focusedContainerColor = field, unfocusedContainerColor = field))
@@ -211,9 +215,7 @@ private fun EditorScreen(
 
             Text("TIMELINE", color = fg, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 18.dp, bottom = 4.dp))
             Row(Modifier.fillMaxWidth().background(panel, RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalButton(onClick = { isPlaying = !isPlaying }, enabled = project.video.isNotBlank()) {
-                    Text(if (isPlaying) "Ⅱ  Pause" else "▶  Play")
-                }
+                FilledTonalButton(onClick = { isPlaying = !isPlaying }, enabled = project.video.isNotBlank()) { Text(if (isPlaying) "Ⅱ  Pause" else "▶  Play") }
                 Spacer(Modifier.width(10.dp))
                 Text(formatTime(playheadMs), color = fg, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
@@ -229,9 +231,7 @@ private fun EditorScreen(
             TimelineRow("VIDEO", if (project.video.isBlank()) "Import a video to begin" else "Video track • ${formatTime(durationMs)}", fg, panel)
             TimelineRow("B  DESCRIPTION", if (project.description.isBlank()) "Empty" else "Template text • full duration", fg, panel)
             TimelineRow("C  TEACHER", if (project.teacher.isBlank()) "Empty" else "Teacher label • full duration", fg, panel)
-            if (project.overlays.isNotEmpty()) project.overlays.forEach { clip ->
-                TimelineRow("TEXT", "${clip.text} • ${formatTime(clip.startMs)}–${formatTime(clip.endMs)}", fg, panel)
-            }
+            project.overlays.forEach { clip -> TimelineRow("TEXT", "${clip.text} • ${formatTime(clip.startMs)}–${formatTime(clip.endMs)}", fg, panel) }
 
             Text("EDITING TOOLS", color = fg, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp, bottom = 7.dp))
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
