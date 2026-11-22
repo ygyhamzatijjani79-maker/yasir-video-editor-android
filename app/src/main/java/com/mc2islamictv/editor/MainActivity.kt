@@ -487,7 +487,7 @@ private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, 
                 override fun getSpeed(timeUs: Long): Float = project.speed.coerceIn(0.5f, 2f)
                 override fun getNextSpeedChangeTimeUs(timeUs: Long): Long = androidx.media3.common.C.TIME_UNSET
             }
-            val videoEffects = MC2ExportRenderer.buildEffects(project, this@exportMp4)
+            val videoEffects = MC2ExportRenderer.buildEffects(project)
             val combinedEffects = if (kotlin.math.abs(project.speed - 1f) < 0.001f) {
                 Effects(emptyList(), videoEffects)
             } else {
