@@ -54,10 +54,12 @@ internal object MC2ExportRenderer {
                 ))
             }
         }
-        if (project.brightness != 0f) effects += Brightness(project.brightness.coerceIn(-1f, 1f))
-        if (project.contrast != 0f) effects += Contrast(project.contrast.coerceIn(-1f, 1f))
+        // Match the preview's matrix composition: saturation first, then
+        // contrast around the midpoint, and brightness as the final offset.
         if (project.saturation != 0f) effects += HslAdjustment.Builder()
             .adjustSaturation(project.saturation.coerceIn(-100f, 100f)).build()
+        if (project.contrast != 0f) effects += Contrast(project.contrast.coerceIn(-1f, 1f))
+        if (project.brightness != 0f) effects += Brightness(project.brightness.coerceIn(-1f, 1f))
         return effects
     }
 
