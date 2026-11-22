@@ -41,6 +41,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.Transformer
+import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.DefaultDecoderFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -389,7 +391,17 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
         val output = File(cacheDir, "mc2_${project.id}.mp4")
         try {
             if (output.exists()) output.delete()
-            val transformer = Transformer.Builder(this@exportMp4).build()
+            val encoderFactory = DefaultEncoderFactory.Builder(this@exportMp4)
+                .setEnableFallback(true)
+                .setEnableFormatFallback(true)
+                .build()
+            val decoderFactory = DefaultDecoderFactory.Builder(this@exportMp4)
+                .setEnableDecoderFallback(true)
+                .build()
+            val transformer = Transformer.Builder(this@exportMp4)
+                .setEncoderFactory(encoderFactory)
+                .setDecoderFactory(decoderFactory)
+                .build()
             transformer.addListener(object : Transformer.Listener {
                 override fun onCompleted(
                     composition: androidx.media3.transformer.Composition,
@@ -435,7 +447,12 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                     exportException: androidx.media3.transformer.ExportException
                 ) {
                     output.delete()
-                    done("Export failed: ${exportException.message ?: "unknown error"}${exportException.cause?.let { " • ${it.message}" } ?: ""}")
+                    val causeText = generateSequence<Throwable>(exportException) { it.cause }
+                        .mapNotNull { it.message }
+                        .distinct()
+                        .take(4)
+                        .joinToString(" → ")
+                    done("Export failed [${exportException.errorCode}]: ${causeText.ifBlank { "Video processing failed. Try another source video or lower resolution." }}")
                 }
             })
             val clipping = MediaItem.ClippingConfiguration.Builder()
