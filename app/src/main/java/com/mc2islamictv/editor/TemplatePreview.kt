@@ -56,7 +56,7 @@ fun MC2TemplatePreview(
     muted: Boolean = false,
     isPlaying: Boolean = true,
     onPlaybackUpdate: (Long, Long) -> Unit = { _, _ -> },
-    onSeekTo: (Long) -> Unit = {},
+    seekPositionMs: Long = -1L,
     onTransformChange: (Float, Float, Float) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
@@ -78,6 +78,9 @@ fun MC2TemplatePreview(
         player?.playbackParameters = androidx.media3.common.PlaybackParameters(speed.coerceIn(0.5f, 2f))
         player?.volume = if (muted) 0f else volume.coerceIn(0f, 1f)
         player?.playWhenReady = isPlaying
+    }
+    LaunchedEffect(player, seekPositionMs) {
+        if (player != null && seekPositionMs >= 0L && kotlin.math.abs(player.currentPosition - seekPositionMs) > 250L) player.seekTo(seekPositionMs)
     }
     LaunchedEffect(player) {
         if (player == null) {
