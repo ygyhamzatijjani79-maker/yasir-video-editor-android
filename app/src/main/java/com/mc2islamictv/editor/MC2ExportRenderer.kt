@@ -11,12 +11,10 @@ import android.graphics.Typeface
 import android.text.SpannableString
 import androidx.media3.common.OverlaySettings
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.effect.Brightness
 import androidx.media3.effect.CanvasOverlay
-import androidx.media3.effect.Contrast
 import androidx.media3.effect.MatrixTransformation
-import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.RgbMatrix
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
@@ -34,33 +32,67 @@ internal object MC2ExportRenderer {
     private const val VIDEO_APERTURE_CENTER_X_NDC = 2f * (0.38f + 0.575f / 2f) - 1f
     private const val VIDEO_APERTURE_CENTER_Y_NDC = 1f - 2f * (0.055f + 0.70f / 2f)
 
-    /** Shared by the live preview and the MP4 renderer so adjustments stay identical. */
+    /** Uses the same RGB matrix as the TextureView preview for color adjustments. */
     fun buildSourceVideoEffects(project: Project): List<androidx.media3.common.Effect> {
-        val effects = mutableListOf<androidx.media3.common.Effect>()
-        val totalCrop = (project.crop.coerceIn(0f, 0.4f) +
-            ((1f - (1f / project.zoom.coerceIn(1f, 4f))) / 2f)).coerceIn(0f, 0.46f)
-        val scale = 1f / (1f - 2f * totalCrop).coerceAtLeast(0.08f)
+        return if (project.brightness == 0f && project.contrast == 0f && project.saturation == 0f) {
+            emptyList()
+        } else {
+            listOf(PreviewColorMatrixEffect(project))
+        }
+    }
+
+    /**
+     * Mirrors TemplatePreview.applyPreviewTransform in normalized video coordinates.
+     * The first Presentation effect has already center-cropped the source into the
+     * exact aperture aspect ratio, so only the user's zoom/crop/pan/rotation remain.
+     */
+    private fun buildApertureVideoTransform(project: Project): MatrixTransformation {
+        val aspect = VIDEO_APERTURE_RATIO
+        val userScale = (project.zoom.coerceIn(1f, 4f) /
+            (1f - project.crop.coerceIn(0f, 0.4f))).coerceIn(1f, 7f)
+        val radians = Math.toRadians(-project.rotation.toDouble())
+        val cos = kotlin.math.cos(radians).toFloat() * userScale
+        val sin = kotlin.math.sin(radians).toFloat() * userScale
         val panX = project.panX.coerceIn(-1f, 1f) * 0.90f
         val panY = -project.panY.coerceIn(-1f, 1f) * 0.90f
-        val radians = Math.toRadians(-project.rotation.toDouble())
-        val cos = kotlin.math.cos(radians).toFloat() * scale
-        val sin = kotlin.math.sin(radians).toFloat() * scale
-        effects += MatrixTransformation { _ ->
+        return MatrixTransformation { _ ->
             Matrix().apply {
                 setValues(floatArrayOf(
-                    cos, -sin, panX,
-                    sin, cos, panY,
+                    cos, -sin / aspect, panX,
+                    sin * aspect, cos, panY,
                     0f, 0f, 1f
                 ))
             }
         }
-        // Match the preview's matrix composition: saturation first, then
-        // contrast around the midpoint, and brightness as the final offset.
-        if (project.saturation != 0f) effects += HslAdjustment.Builder()
-            .adjustSaturation(project.saturation.coerceIn(-100f, 100f)).build()
-        if (project.contrast != 0f) effects += Contrast(project.contrast.coerceIn(-1f, 1f))
-        if (project.brightness != 0f) effects += Brightness(project.brightness.coerceIn(-1f, 1f))
-        return effects
+    }
+
+    /** Same saturation → contrast → brightness ColorMatrix composition as the preview. */
+    private class PreviewColorMatrixEffect(private val project: Project) : RgbMatrix {
+        override fun getMatrix(presentationTimeUs: Long, useHdr: Boolean): FloatArray {
+            val saturation = (1f + project.saturation.coerceIn(-100f, 100f) / 100f).coerceIn(0f, 2f)
+            val lr = 0.213f
+            val lg = 0.715f
+            val lb = 0.072f
+            val inverse = 1f - saturation
+            val s = floatArrayOf(
+                lr + inverse * lr, inverse * lg, inverse * lb, 0f,
+                inverse * lr, lg + inverse * lg, inverse * lb, 0f,
+                inverse * lr, inverse * lg, lb + inverse * lb, 0f,
+                0f, 0f, 0f, 1f
+            )
+            val contrast = 1f + project.contrast.coerceIn(-1f, 1f)
+            val offset = project.brightness.coerceIn(-1f, 1f) +
+                (128f / 255f) * (1f - contrast)
+            // Android ColorMatrix postConcat applies the contrast/brightness
+            // adjustment after saturation. Convert its row-major matrix to GL
+            // column-major order, using normalized RGB values.
+            return floatArrayOf(
+                contrast * s[0], contrast * s[4], contrast * s[8], 0f,
+                contrast * s[1], contrast * s[5], contrast * s[9], 0f,
+                contrast * s[2], contrast * s[6], contrast * s[10], 0f,
+                offset, offset, offset, 1f
+            )
+        }
     }
 
     fun buildEffects(project: Project): List<androidx.media3.common.Effect> {
@@ -69,13 +101,15 @@ internal object MC2ExportRenderer {
         if (project.overlays.isNotEmpty()) layers += TimedTextOverlay(project.overlays)
 
         val effects = mutableListOf<androidx.media3.common.Effect>()
-        // Apply the exact same source transforms as the live preview BEFORE fitting
-        // the transformed source into the template aperture. This preserves zoom, pan,
-        // rotation and lighting instead of applying them to an already-cropped frame.
+        // Color correction is applied before composition. First crop the source
+        // to fill the same aperture shape used by the live preview, then apply
+        // the preview-equivalent user transform inside that aperture.
         effects += buildSourceVideoEffects(project)
         effects += Presentation.createForAspectRatio(
-            VIDEO_APERTURE_RATIO, Presentation.LAYOUT_SCALE_TO_FIT
+            VIDEO_APERTURE_RATIO, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
         )
+        effects += buildApertureVideoTransform(project)
+        // Pad the aperture-shaped video to a square output before positioning it.
         effects += Presentation.createForAspectRatio(1f, Presentation.LAYOUT_SCALE_TO_FIT)
         effects += MatrixTransformation { _ ->
             Matrix().apply {
@@ -234,14 +268,9 @@ internal object MC2ExportRenderer {
 }
 
 @UnstableApi
-private class AnimatedTemplateOverlay(private val project: Project) : CanvasOverlay(false) {
-    // The final composition is deliberately square (1:1). Use a fixed square
-    // overlay canvas so portrait/landscape source dimensions cannot resize or
-    // crop the template layer differently from the square editor preview.
-    init {
-        setCanvasSize(1080, 1080)
-    }
-
+private class AnimatedTemplateOverlay(private val project: Project) : CanvasOverlay(true) {
+    // OverlayEffect receives the final square frame after both Presentation effects.
+    // Matching that actual frame size guarantees a full-frame template texture.
     override fun onDraw(canvas: Canvas, presentationTimeUs: Long) {
         val phase = (presentationTimeUs / 1_000_000f / 9f) % 1f
         canvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
