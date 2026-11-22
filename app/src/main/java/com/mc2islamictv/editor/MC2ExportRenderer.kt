@@ -198,11 +198,21 @@ internal object MC2ExportRenderer {
 }
 
 @UnstableApi
-private class AnimatedTemplateOverlay(private val project: Project) : CanvasOverlay(false) {
-    init { setCanvasSize(1080, 1080) }
+private class AnimatedTemplateOverlay(private val project: Project) : CanvasOverlay(true) {
+    // Match the actual video-frame texture dimensions. A fixed 1080x1080 overlay can
+    // be clipped/mis-sized by Transformer when the source is portrait or landscape.
+    // Draw a centered square into the full-frame canvas so the later 1:1 presentation
+    // crop retains the same square template shown in the editor preview.
     override fun onDraw(canvas: Canvas, presentationTimeUs: Long) {
         val phase = (presentationTimeUs / 1_000_000f / 9f) % 1f
+        val side = minOf(canvas.width, canvas.height).toFloat()
+        val left = (canvas.width - side) / 2f
+        val top = (canvas.height - side) / 2f
+        canvas.save()
+        canvas.translate(left, top)
+        canvas.scale(side / 1080f, side / 1080f)
         MC2ExportRenderer.drawTemplate(canvas, project, phase)
+        canvas.restore()
     }
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
         StaticOverlaySettings.Builder()
