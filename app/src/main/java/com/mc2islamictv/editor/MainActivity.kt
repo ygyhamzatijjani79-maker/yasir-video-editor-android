@@ -172,6 +172,7 @@ private fun EditorScreen(
     var selectedTool by remember { mutableStateOf("Trim") }
     var isPlaying by remember(project.id, project.video) { mutableStateOf(true) }
     var playheadMs by remember(project.id, project.video) { mutableLongStateOf(0L) }
+    var seekRequestMs by remember(project.id, project.video) { mutableLongStateOf(-1L) }
     var durationMs by remember(project.id, project.video) { mutableLongStateOf(0L) }
     val bg = if (darkMode) Color(0xFF101010) else Color.White
     val fg = if (darkMode) Color.White else Color(0xFF111111)
@@ -195,7 +196,7 @@ private fun EditorScreen(
                 rotation = project.rotation, speed = project.speed, volume = project.volume, muted = project.muted,
                 isPlaying = isPlaying,
                 onPlaybackUpdate = { position, duration -> playheadMs = position; durationMs = duration },
-                onSeekTo = { target -> playheadMs = target },
+                seekPositionMs = seekRequestMs,
                 onTransformChange = { z, x, y -> onChange(project.copy(zoom = z, panX = x, panY = y)) }
             )
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -220,7 +221,7 @@ private fun EditorScreen(
             Slider(
                 value = playheadMs.coerceIn(0L, durationMs.coerceAtLeast(1L)).toFloat(),
                 onValueChange = { playheadMs = it.toLong() },
-                onValueChangeFinished = { },
+                onValueChangeFinished = { seekRequestMs = playheadMs },
                 valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
                 enabled = durationMs > 0L && project.video.isNotBlank()
             )
@@ -433,7 +434,7 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                     exportException: androidx.media3.transformer.ExportException
                 ) {
                     output.delete()
-                    done("Export failed: ${exportException.message ?: "unknown error"}")
+                    done("Export failed: ${exportException.message ?: "unknown error"}${exportException.cause?.let { " • ${it.message}" } ?: ""}")
                 }
             })
             val clipping = MediaItem.ClippingConfiguration.Builder()
@@ -446,10 +447,16 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                 override fun getSpeed(timeUs: Long): Float = project.speed.coerceIn(0.5f, 2f)
                 override fun getNextSpeedChangeTimeUs(timeUs: Long): Long = androidx.media3.common.C.TIME_UNSET
             }
-            val speedEffects = Effects.createExperimentalSpeedChangingEffect(speedProvider)
+            val videoEffects = MC2ExportRenderer.buildEffects(project)
+            val combinedEffects = if (kotlin.math.abs(project.speed - 1f) < 0.001f) {
+                Effects(emptyList(), videoEffects)
+            } else {
+                val speedEffects = Effects.createExperimentalSpeedChangingEffect(speedProvider)
+                Effects(listOf(speedEffects.first), videoEffects + speedEffects.second)
+            }
             val editedItem = EditedMediaItem.Builder(sourceItem)
                 .setRemoveAudio(project.muted)
-                .setEffects(Effects(listOf(speedEffects.first), MC2ExportRenderer.buildEffects(project) + speedEffects.second))
+                .setEffects(combinedEffects)
                 .build()
             transformer.start(editedItem, output.absolutePath)
         } catch (e: Exception) {
