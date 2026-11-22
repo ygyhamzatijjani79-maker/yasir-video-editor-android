@@ -42,8 +42,10 @@ import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.ProgressHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
@@ -71,6 +73,7 @@ private fun MC2App() {
     var current by remember { mutableStateOf<Project?>(null) }
     var exporting by remember { mutableStateOf(false) }
     var exportMessage by remember { mutableStateOf("") }
+    var exportProgress by remember { mutableIntStateOf(0) }
     var darkMode by remember { mutableStateOf(prefs.getBoolean("dark_mode", false)) }
     val importScope = rememberCoroutineScope()
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -104,12 +107,13 @@ private fun MC2App() {
                         if (p.video.isBlank()) exportMessage = "Da farko zaɓi video."
                         else {
                             exporting = true
+                            exportProgress = 0
                             exportMessage = "Ana shirya MP4…"
-                            (context as? MainActivity)?.exportMp4(p, { message -> exportMessage = message; exporting = false })
+                            (context as? MainActivity)?.exportMp4(p, { value -> exportProgress = value }, { message -> exportMessage = message; exporting = false })
                         }
                     },
                     exporting = exporting,
-                    exportMessage = exportMessage, darkMode = darkMode, onToggleTheme = { darkMode = !darkMode; prefs.edit().putBoolean("dark_mode", darkMode).apply() }
+                    exportMessage = exportMessage, exportProgress = exportProgress, darkMode = darkMode, onToggleTheme = { darkMode = !darkMode; prefs.edit().putBoolean("dark_mode", darkMode).apply() }
                 )
             }
         }
@@ -167,7 +171,7 @@ private fun HomeScreen(
 @Composable
 private fun EditorScreen(
     project: Project, onBack: () -> Unit, onChange: (Project) -> Unit, onPickVideo: () -> Unit,
-    onExport: () -> Unit, exporting: Boolean, exportMessage: String,
+    onExport: () -> Unit, exporting: Boolean, exportMessage: String, exportProgress: Int,
     darkMode: Boolean, onToggleTheme: () -> Unit
 ) {
     var selectedTool by remember { mutableStateOf("Trim") }
@@ -276,8 +280,12 @@ private fun EditorScreen(
         }
         Column(Modifier.fillMaxWidth().background(panel).padding(horizontal = 12.dp, vertical = 10.dp)) {
             if (exportMessage.isNotBlank()) Text(exportMessage, color = fg, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
+            if (exporting) {
+                LinearProgressIndicator(progress = exportProgress.coerceIn(0, 100) / 100f, modifier = Modifier.fillMaxWidth())
+                Text("$exportProgress%  •  Processing and saving MP4", color = fg, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 6.dp))
+            }
             Button(onClick = onExport, enabled = !exporting && project.video.isNotBlank(), modifier = Modifier.fillMaxWidth().height(54.dp), colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) {
-                Text(if (exporting) "RENDERING MP4…" else "EXPORT  •  MP4", fontWeight = FontWeight.Bold)
+                Text(if (exporting) "RENDERING MP4…  $exportProgress%" else "EXPORT  •  MP4", fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -385,9 +393,10 @@ private fun shareProject(context: Context, project: Project) {
 }
 
 @OptIn(UnstableApi::class)
-private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
+private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, done: (String) -> Unit) {
     lifecycleScope.launch {
         val output = File(cacheDir, "mc2_${project.id}.mp4")
+        var exportStageFinished = false
         try {
             if (output.exists()) output.delete()
             val encoderFactory = DefaultEncoderFactory.Builder(this@exportMp4)
@@ -401,6 +410,8 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                     composition: androidx.media3.transformer.Composition,
                     exportResult: androidx.media3.transformer.ExportResult
                 ) {
+                    exportStageFinished = true
+                    onProgress(95)
                     lifecycleScope.launch(Dispatchers.IO) {
                         var savedUri: Uri? = null
                         try {
@@ -416,12 +427,28 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                             }
                             savedUri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
                                 ?: throw IllegalStateException("Could not create MP4 file in Movies")
-                            val stream = contentResolver.openOutputStream(savedUri!!)
+                            val totalBytes = output.length().coerceAtLeast(1L)
+                            val destination = contentResolver.openOutputStream(savedUri!!)
                                 ?: throw IllegalStateException("Could not open MP4 output stream")
-                            stream.use { out -> output.inputStream().use { input -> input.copyTo(out) } }
+                            destination.use { out ->
+                                output.inputStream().use { input ->
+                                    val buffer = ByteArray(1024 * 1024)
+                                    var copied = 0L
+                                    while (true) {
+                                        val count = input.read(buffer)
+                                        if (count < 0) break
+                                        out.write(buffer, 0, count)
+                                        copied += count
+                                        val saveProgress = 95 + ((copied * 4L) / totalBytes).toInt().coerceIn(0, 4)
+                                        withContext(Dispatchers.Main) { onProgress(saveProgress.coerceAtMost(99)) }
+                                    }
+                                    out.flush()
+                                }
+                            }
                             val publish = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
                             contentResolver.update(savedUri!!, publish, null, null)
                             withContext(Dispatchers.Main) {
+                                onProgress(100)
                                 done("An adana MP4 a Movies/MC2 ISLAMIC TV")
                             }
                         } catch (e: Exception) {
@@ -440,11 +467,12 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                     exportResult: androidx.media3.transformer.ExportResult,
                     exportException: androidx.media3.transformer.ExportException
                 ) {
+                    exportStageFinished = true
                     output.delete()
                     val causeText = generateSequence<Throwable>(exportException) { it.cause }
                         .mapNotNull { it.message }
                         .distinct()
-                        .take(4)
+                        .take(5)
                         .joinToString(" → ")
                     done("Export failed [${exportException.errorCode}]: ${causeText.ifBlank { "Video processing failed. Try another source video or lower resolution." }}")
                 }
@@ -471,7 +499,18 @@ private fun MainActivity.exportMp4(project: Project, done: (String) -> Unit) {
                 .setEffects(combinedEffects)
                 .build()
             transformer.start(editedItem, output.absolutePath)
+
+            // Query Media3's actual encoder progress on the application looper.
+            val progressHolder = ProgressHolder()
+            while (!exportStageFinished) {
+                val state = transformer.getProgress(progressHolder)
+                if (state == Transformer.PROGRESS_STATE_AVAILABLE) {
+                    onProgress(progressHolder.progress.coerceIn(0, 94))
+                }
+                delay(300)
+            }
         } catch (e: Exception) {
+            exportStageFinished = true
             output.delete()
             done("Export error: ${e.message ?: "unknown error"}")
         }
