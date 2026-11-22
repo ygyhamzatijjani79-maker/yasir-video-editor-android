@@ -158,28 +158,6 @@ fun MC2TemplatePreview(
             }
         }
         Image(bitmap = template, contentDescription = "MC2 Islamic animated template", contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
-        Canvas(Modifier.fillMaxSize()) {
-            val cycle = (0.5f + 0.5f * kotlin.math.sin(phase * (2f * Math.PI).toFloat())).coerceIn(0f, 1f)
-            val accent = androidx.compose.ui.graphics.lerp(Color(0xFFFFD34E), Color(0xFF75F2FF), cycle)
-            val pulse = 0.62f + 0.38f * ((kotlin.math.sin(phase * (6f * Math.PI).toFloat()) + 1f) / 2f)
-            drawRoundRect(accent.copy(alpha = 0.88f * pulse), style = Stroke(width = 3.dp.toPx()), cornerRadius = androidx.compose.ui.geometry.CornerRadius(18.dp.toPx()))
-            val flowers = listOf(
-                androidx.compose.ui.geometry.Offset(size.width * 0.065f, size.height * 0.075f),
-                androidx.compose.ui.geometry.Offset(size.width * 0.935f, size.height * 0.075f),
-                androidx.compose.ui.geometry.Offset(size.width * 0.065f, size.height * 0.925f),
-                androidx.compose.ui.geometry.Offset(size.width * 0.935f, size.height * 0.925f)
-            )
-            flowers.forEachIndexed { index, center ->
-                rotate(phase * 360f * if (index % 2 == 0) 1f else -1f, pivot = center) {
-                    drawCircle(accent.copy(alpha = 0.18f * pulse), radius = size.width * 0.055f, center = center)
-                    repeat(6) { petal ->
-                        rotate(petal * 60f, pivot = center) {
-                            drawCircle(accent.copy(alpha = 0.92f * pulse), radius = size.width * 0.014f, center = androidx.compose.ui.geometry.Offset(center.x, center.y - size.width * 0.027f))
-                        }
-                    }
-                    drawCircle(Color(0xFFFFF2B2), radius = size.width * 0.009f, center = center)
-                }
-            }
-        }
+
     }
 }
