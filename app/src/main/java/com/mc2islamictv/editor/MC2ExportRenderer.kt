@@ -1,6 +1,8 @@
 package com.mc2islamictv.editor
 
+import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -30,10 +32,13 @@ internal object MC2ExportRenderer {
     private val black = Color.BLACK
     private val white = Color.WHITE
 
-    fun buildEffects(project: Project): List<androidx.media3.common.Effect> {
+    fun buildEffects(project: Project, context: Context): List<androidx.media3.common.Effect> {
+        // The source is first converted to a square frame; the full-screen template is then
+        // composited over it on every encoded frame, with the clear aperture exposing the video.
+        val logo = BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
         val layers = mutableListOf<androidx.media3.effect.TextureOverlay>()
+        layers += AnimatedTemplateOverlay(project, logo)
         if (project.overlays.isNotEmpty()) layers += TimedTextOverlay(project.overlays)
-        layers += AnimatedTemplateOverlay(project)
 
         val effects = mutableListOf<androidx.media3.common.Effect>()
         effects += Presentation.createForAspectRatio(1f, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP)
@@ -54,17 +59,17 @@ internal object MC2ExportRenderer {
         return effects
     }
 
-    fun createTemplateBitmap(project: Project, width: Int = SIZE, height: Int = SIZE, phase: Float = 0f): Bitmap {
+    fun createTemplateBitmap(project: Project, width: Int = SIZE, height: Int = SIZE, phase: Float = 0f, logoBitmap: Bitmap? = null): Bitmap {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.save()
         canvas.scale(width / SIZE.toFloat(), height / SIZE.toFloat())
-        drawTemplate(canvas, project, phase)
+        drawTemplate(canvas, project, phase, logoBitmap)
         canvas.restore()
         return bitmap
     }
 
-    internal fun drawTemplate(canvas: Canvas, project: Project, phase: Float) {
+    internal fun drawTemplate(canvas: Canvas, project: Project, phase: Float, logoBitmap: Bitmap? = null) {
         val t = ((phase % 1f) + 1f) % 1f
         val green = cycleColor(t, intArrayOf(Color.rgb(0, 66, 38), Color.rgb(12, 39, 70), Color.rgb(61, 27, 64)))
         val gold = cycleColor(t, intArrayOf(Color.rgb(220, 170, 35), Color.rgb(88, 199, 222), Color.rgb(231, 162, 92)))
@@ -137,11 +142,14 @@ internal object MC2ExportRenderer {
         canvas.drawRoundRect(nameplate, 74f, 74f, line)
         text.color = white; text.textSize = 58f
         drawFit(canvas, project.teacher.ifBlank { "TEACHER NAME" }, 540f, 910f, 790f, text)
+        // Replace the old channel-name text plate with the user's supplied MC2 logo.
         fill.color = cream
-        val channelPill = RectF(285f, 936f, 795f, 1000f)
-        canvas.drawRoundRect(channelPill, 32f, 32f, fill)
-        text.color = black; text.textSize = 34f
-        canvas.drawText("MC2 ISLAMIC TV", 540f, 980f, text)
+        val logoPlate = RectF(500f, 928f, 580f, 1008f)
+        canvas.drawRoundRect(logoPlate, 18f, 18f, fill)
+        logoBitmap?.let { logo ->
+            val logoPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            canvas.drawBitmap(logo, null, RectF(503f, 931f, 577f, 1005f), logoPaint)
+        }
     }
 
     private fun cycleColor(phase: Float, colors: IntArray): Int {
@@ -177,12 +185,18 @@ internal object MC2ExportRenderer {
 }
 
 @UnstableApi
-private class AnimatedTemplateOverlay(private val project: Project) : CanvasOverlay(false) {
+private class AnimatedTemplateOverlay(private val project: Project, private val logoBitmap: Bitmap) : CanvasOverlay(false) {
     init { setCanvasSize(1080, 1080) }
     override fun onDraw(canvas: Canvas, presentationTimeUs: Long) {
         val phase = (presentationTimeUs / 1_000_000f / 9f) % 1f
-        MC2ExportRenderer.drawTemplate(canvas, project, phase)
+        MC2ExportRenderer.drawTemplate(canvas, project, phase, logoBitmap)
     }
+    override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
+        StaticOverlaySettings.Builder()
+            .setScale(1f, 1f)
+            .setBackgroundFrameAnchor(0f, 0f)
+            .setOverlayFrameAnchor(0f, 0f)
+            .build()
 }
 
 @UnstableApi

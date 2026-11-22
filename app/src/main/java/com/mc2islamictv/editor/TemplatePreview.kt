@@ -1,5 +1,6 @@
 package com.mc2islamictv.editor
 
+import android.graphics.BitmapFactory
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
@@ -60,6 +61,7 @@ fun MC2TemplatePreview(
     onTransformChange: (Float, Float, Float) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
+    val logoBitmap = remember(context) { BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher) }
     val latestZoom by rememberUpdatedState(zoom)
     val latestPanX by rememberUpdatedState(panX)
     val latestPanY by rememberUpdatedState(panY)
@@ -103,7 +105,8 @@ fun MC2TemplatePreview(
             Project(name = "Preview", description = description, teacher = teacher),
             width = 540,
             height = 540,
-            phase = phase
+            phase = phase,
+            logoBitmap = logoBitmap
         ).asImageBitmap()
     }
 
