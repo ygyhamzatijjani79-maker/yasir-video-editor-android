@@ -15,8 +15,7 @@ import androidx.media3.effect.CanvasOverlay
 import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.RgbMatrix
-import androidx.media3.effect.ScaleAndRotateTransformation
-import androidx.media3.effect.Presentation
+import androidx.media3.common.util.Size
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
 
@@ -27,11 +26,16 @@ internal object MC2ExportRenderer {
     private val black = Color.BLACK
     private val white = Color.WHITE
 
-    private const val VIDEO_APERTURE_RATIO = 0.575f / 0.70f
-    private const val VIDEO_APERTURE_SCALE = 0.70f
-    // MatrixTransformation uses normalized device coordinates (-1..1), not 0..1.
-    private const val VIDEO_APERTURE_CENTER_X_NDC = 2f * (0.38f + 0.575f / 2f) - 1f
-    private const val VIDEO_APERTURE_CENTER_Y_NDC = 1f - 2f * (0.055f + 0.70f / 2f)
+    // Preview viewport in the square composition, expressed as fractions of its size.
+    private const val VIDEO_APERTURE_WIDTH = 0.575f
+    private const val VIDEO_APERTURE_HEIGHT = 0.70f
+    private const val VIDEO_APERTURE_LEFT = 0.38f
+    private const val VIDEO_APERTURE_TOP = 0.055f
+    // MatrixTransformation uses normalized device coordinates (-1..1).
+    private const val VIDEO_APERTURE_CENTER_X_NDC =
+        2f * (VIDEO_APERTURE_LEFT + VIDEO_APERTURE_WIDTH / 2f) - 1f
+    private const val VIDEO_APERTURE_CENTER_Y_NDC =
+        1f - 2f * (VIDEO_APERTURE_TOP + VIDEO_APERTURE_HEIGHT / 2f)
 
     /** Uses the same RGB matrix as the TextureView preview for color adjustments. */
     fun buildSourceVideoEffects(project: Project): List<androidx.media3.common.Effect> {
@@ -43,31 +47,73 @@ internal object MC2ExportRenderer {
     }
 
     /**
-     * Mirrors the preview transform order:
-     * 1) rotate the full source frame,
-     * 2) center-crop the rotated bounds to the aperture,
-     * 3) apply user zoom/crop and pan inside that aperture.
+     * One-pass equivalent of applyPreviewTransform in TemplatePreview.kt.
      *
-     * This is deliberately split around Presentation: cropping before rotation
-     * changes the visible framing for non-zero rotations.
+     * The preview computes a pixel-space scale from the rotated source bounds,
+     * then applies user zoom/crop and pan inside the aperture. This transformation
+     * performs that same calculation directly from the decoded input dimensions
+     * and maps the source into the final square composition in one matrix.
+     *
+     * Combining rotation, fit-crop, user scale, pan and aperture placement avoids
+     * intermediate Presentation frames whose aspect-ratio rounding can shift the
+     * crop/zoom result relative to the live TextureView.
      */
-    private fun buildApertureVideoTransform(project: Project): MatrixTransformation {
-        val userScale = (project.zoom.coerceIn(1f, 4f) /
-            (1f - project.crop.coerceIn(0f, 0.4f))).coerceIn(1f, 7f)
-        // The square-fit stage leaves the aperture-ratio image at 0.8214 of
-        // the square frame width. The following placement scales both axes by
-        // 0.70, so preserve the preview's 45%-of-aperture pan in pixel space.
-        val panX = project.panX.coerceIn(-1f, 1f) * (0.90f * VIDEO_APERTURE_RATIO)
-        val panY = -project.panY.coerceIn(-1f, 1f) * 0.90f
-        return MatrixTransformation { _ ->
-            Matrix().apply {
+    private class PreviewMatchedApertureTransformation(
+        private val project: Project
+    ) : MatrixTransformation {
+        private var transformationMatrix = Matrix()
+
+        override fun configure(inputWidth: Int, inputHeight: Int): Size {
+            val sourceWidth = inputWidth.coerceAtLeast(1).toFloat()
+            val sourceHeight = inputHeight.coerceAtLeast(1).toFloat()
+            val angle = Math.toRadians(project.rotation.toDouble())
+            val cosine = kotlin.math.cos(angle).toFloat()
+            val sine = kotlin.math.sin(angle).toFloat()
+
+            // Same rotated-bounds calculation used by applyPreviewTransform().
+            val rotatedWidth =
+                kotlin.math.abs(sourceWidth * cosine) + kotlin.math.abs(sourceHeight * sine)
+            val rotatedHeight =
+                kotlin.math.abs(sourceHeight * cosine) + kotlin.math.abs(sourceWidth * sine)
+            val baseScale = max(
+                VIDEO_APERTURE_WIDTH * SIZE / rotatedWidth,
+                VIDEO_APERTURE_HEIGHT * SIZE / rotatedHeight
+            )
+            val userScale = (
+                project.zoom.coerceIn(1f, 4f) /
+                    (1f - project.crop.coerceIn(0f, 0.4f))
+                ).coerceIn(1f, 7f)
+            val scale = baseScale * userScale
+
+            // Preview pan is 45% of the aperture in pixel space. Convert that
+            // exact displacement to square-frame NDC, including screen Y inversion.
+            val panX = project.panX.coerceIn(-1f, 1f) *
+                (2f * 0.45f * VIDEO_APERTURE_WIDTH)
+            val panY = -project.panY.coerceIn(-1f, 1f) *
+                (2f * 0.45f * VIDEO_APERTURE_HEIGHT)
+
+            val widthScale = scale * sourceWidth / SIZE
+            val heightScale = scale * sourceHeight / SIZE
+
+            // Input NDC has y-up coordinates; the preview TextureView uses y-down
+            // pixel coordinates. This matrix converts between them while rotating
+            // clockwise exactly as the preview's positive Android Matrix rotation.
+            transformationMatrix = Matrix().apply {
                 setValues(floatArrayOf(
-                    userScale, 0f, panX,
-                    0f, userScale, panY,
+                    widthScale * cosine,
+                    heightScale * sine,
+                    VIDEO_APERTURE_CENTER_X_NDC + panX,
+                    -widthScale * sine,
+                    heightScale * cosine,
+                    VIDEO_APERTURE_CENTER_Y_NDC + panY,
                     0f, 0f, 1f
                 ))
             }
+            return Size(SIZE, SIZE)
         }
+
+        override fun getMatrix(presentationTimeUs: Long): Matrix =
+            Matrix(transformationMatrix)
     }
 
     /** Same saturation → contrast → brightness ColorMatrix composition as the preview. */
@@ -105,39 +151,11 @@ internal object MC2ExportRenderer {
         if (project.overlays.isNotEmpty()) layers += TimedTextOverlay(project.overlays)
 
         val effects = mutableListOf<androidx.media3.common.Effect>()
-        // Color correction is applied before composition. First crop the source
-        // to fill the same aperture shape used by the live preview, then apply
-        // the preview-equivalent user transform inside that aperture.
+        // Apply the same source-dimension-aware transform as the live TextureView.
+        // A single matrix performs rotation, fit-crop, zoom, pan and aperture
+        // placement, then the square template overlay is composed on top.
         effects += buildSourceVideoEffects(project)
-        // Rotate the complete source before cropping, matching TextureView preview.
-        // Media3 adjusts the rotated frame bounds before the aperture crop is applied.
-        if (kotlin.math.abs(project.rotation % 360f) > 0.001f) {
-            effects += ScaleAndRotateTransformation.Builder()
-                .setRotationDegrees(-project.rotation)
-                .build()
-        }
-        effects += Presentation.createForAspectRatio(
-            VIDEO_APERTURE_RATIO, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
-        )
-        // Establish the final 1:1 export canvas BEFORE composing the aperture.
-        // Without this stage Media3 retains a non-square frame and stretches the
-        // square template overlay to match that frame during export.
-        effects += Presentation.createForAspectRatio(
-            1f, Presentation.LAYOUT_SCALE_TO_FIT
-        )
-        effects += buildApertureVideoTransform(project)
-        // The square-fit stage maps the aperture-ratio image to 0.8214 of the
-        // square width. Scaling by 0.70 on both axes therefore places the video
-        // in the exact 0.575 × 0.70 aperture, centered at the preview coordinates.
-        effects += MatrixTransformation { _ ->
-            Matrix().apply {
-                setValues(floatArrayOf(
-                    0.70f, 0f, VIDEO_APERTURE_CENTER_X_NDC,
-                    0f, 0.70f, VIDEO_APERTURE_CENTER_Y_NDC,
-                    0f, 0f, 1f
-                ))
-            }
-        }
+        effects += PreviewMatchedApertureTransformation(project)
         effects += OverlayEffect(layers)
         return effects
     }
