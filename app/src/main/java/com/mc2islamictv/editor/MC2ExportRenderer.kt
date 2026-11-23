@@ -75,7 +75,7 @@ internal object MC2ExportRenderer {
                 kotlin.math.abs(sourceWidth * cosine) + kotlin.math.abs(sourceHeight * sine)
             val rotatedHeight =
                 kotlin.math.abs(sourceHeight * cosine) + kotlin.math.abs(sourceWidth * sine)
-            val baseScale = max(
+            val baseScale = kotlin.math.max(
                 VIDEO_APERTURE_WIDTH * SIZE / rotatedWidth,
                 VIDEO_APERTURE_HEIGHT * SIZE / rotatedHeight
             )
