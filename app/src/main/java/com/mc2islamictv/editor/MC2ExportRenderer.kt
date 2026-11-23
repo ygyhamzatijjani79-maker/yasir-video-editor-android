@@ -58,6 +58,7 @@ internal object MC2ExportRenderer {
      * intermediate Presentation frames whose aspect-ratio rounding can shift the
      * crop/zoom result relative to the live TextureView.
      */
+    @UnstableApi
     private class PreviewMatchedApertureTransformation(
         private val project: Project
     ) : MatrixTransformation {
