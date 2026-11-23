@@ -54,8 +54,11 @@ internal object MC2ExportRenderer {
     private fun buildApertureVideoTransform(project: Project): MatrixTransformation {
         val userScale = (project.zoom.coerceIn(1f, 4f) /
             (1f - project.crop.coerceIn(0f, 0.4f))).coerceIn(1f, 7f)
-        val panX = project.panX.coerceIn(-1f, 1f) * 0.90f
-        val panY = -project.panY.coerceIn(-1f, 1f) * 0.90f
+        // The final aperture placement scales NDC by 0.575 horizontally and
+        // 0.70 vertically. Compensate here so the final screen-space pan is
+        // exactly the preview's 45% of the aperture width/height.
+        val panX = project.panX.coerceIn(-1f, 1f) * (0.90f / 0.575f)
+        val panY = -project.panY.coerceIn(-1f, 1f) * (0.90f / 0.70f)
         return MatrixTransformation { _ ->
             Matrix().apply {
                 setValues(floatArrayOf(
@@ -117,13 +120,14 @@ internal object MC2ExportRenderer {
             VIDEO_APERTURE_RATIO, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
         )
         effects += buildApertureVideoTransform(project)
-        // Pad the aperture-shaped video to a square output before positioning it.
-        effects += Presentation.createForAspectRatio(1f, Presentation.LAYOUT_SCALE_TO_FIT)
+        // Place the aperture-shaped frame directly into the square composition.
+        // Avoid an intermediate square letterbox: that extra Presentation scaled
+        // pan translations differently from TextureView's pixel-space pan.
         effects += MatrixTransformation { _ ->
             Matrix().apply {
                 setValues(floatArrayOf(
-                    VIDEO_APERTURE_SCALE, 0f, VIDEO_APERTURE_CENTER_X_NDC,
-                    0f, VIDEO_APERTURE_SCALE, VIDEO_APERTURE_CENTER_Y_NDC,
+                    0.575f, 0f, VIDEO_APERTURE_CENTER_X_NDC,
+                    0f, 0.70f, VIDEO_APERTURE_CENTER_Y_NDC,
                     0f, 0f, 1f
                 ))
             }
