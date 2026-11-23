@@ -15,6 +15,7 @@ import androidx.media3.effect.CanvasOverlay
 import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.RgbMatrix
+import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
@@ -42,35 +43,24 @@ internal object MC2ExportRenderer {
     }
 
     /**
-     * Mirrors TemplatePreview.applyPreviewTransform in normalized video coordinates.
-     * The first Presentation effect has already center-cropped the source into the
-     * exact aperture aspect ratio, so only the user's zoom/crop/pan/rotation remain.
+     * Mirrors the preview transform order:
+     * 1) rotate the full source frame,
+     * 2) center-crop the rotated bounds to the aperture,
+     * 3) apply user zoom/crop and pan inside that aperture.
+     *
+     * This is deliberately split around Presentation: cropping before rotation
+     * changes the visible framing for non-zero rotations.
      */
     private fun buildApertureVideoTransform(project: Project): MatrixTransformation {
-        val aspect = VIDEO_APERTURE_RATIO
         val userScale = (project.zoom.coerceIn(1f, 4f) /
             (1f - project.crop.coerceIn(0f, 0.4f))).coerceIn(1f, 7f)
-        val radians = Math.toRadians(-project.rotation.toDouble())
-        val rawCos = kotlin.math.cos(radians).toFloat()
-        val rawSin = kotlin.math.sin(radians).toFloat()
-        // The preview computes its base scale from the rotated source bounds.
-        // Reproduce that fill correction after the aperture crop.
-        val absCos = kotlin.math.abs(rawCos)
-        val absSin = kotlin.math.abs(rawSin)
-        val rotationFit = maxOf(
-            aspect / (aspect * absCos + absSin).coerceAtLeast(0.0001f),
-            1f / (absCos + aspect * absSin).coerceAtLeast(0.0001f)
-        )
-        val scale = userScale * rotationFit
-        val cos = rawCos * scale
-        val sin = rawSin * scale
         val panX = project.panX.coerceIn(-1f, 1f) * 0.90f
         val panY = -project.panY.coerceIn(-1f, 1f) * 0.90f
         return MatrixTransformation { _ ->
             Matrix().apply {
                 setValues(floatArrayOf(
-                    cos, -sin / aspect, panX,
-                    sin * aspect, cos, panY,
+                    userScale, 0f, panX,
+                    0f, userScale, panY,
                     0f, 0f, 1f
                 ))
             }
@@ -116,6 +106,13 @@ internal object MC2ExportRenderer {
         // to fill the same aperture shape used by the live preview, then apply
         // the preview-equivalent user transform inside that aperture.
         effects += buildSourceVideoEffects(project)
+        // Rotate the complete source before cropping, matching TextureView preview.
+        // Media3 adjusts the rotated frame bounds before the aperture crop is applied.
+        if (kotlin.math.abs(project.rotation % 360f) > 0.001f) {
+            effects += ScaleAndRotateTransformation.Builder()
+                .setRotationDegrees(-project.rotation)
+                .build()
+        }
         effects += Presentation.createForAspectRatio(
             VIDEO_APERTURE_RATIO, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
         )
