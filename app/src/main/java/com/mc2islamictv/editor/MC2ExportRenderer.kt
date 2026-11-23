@@ -54,11 +54,11 @@ internal object MC2ExportRenderer {
     private fun buildApertureVideoTransform(project: Project): MatrixTransformation {
         val userScale = (project.zoom.coerceIn(1f, 4f) /
             (1f - project.crop.coerceIn(0f, 0.4f))).coerceIn(1f, 7f)
-        // The final aperture placement scales NDC by 0.575 horizontally and
-        // 0.70 vertically. Compensate here so the final screen-space pan is
-        // exactly the preview's 45% of the aperture width/height.
-        val panX = project.panX.coerceIn(-1f, 1f) * (0.90f / 0.575f)
-        val panY = -project.panY.coerceIn(-1f, 1f) * (0.90f / 0.70f)
+        // The square-fit stage leaves the aperture-ratio image at 0.8214 of
+        // the square frame width. The following placement scales both axes by
+        // 0.70, so preserve the preview's 45%-of-aperture pan in pixel space.
+        val panX = project.panX.coerceIn(-1f, 1f) * (0.90f * VIDEO_APERTURE_RATIO)
+        val panY = -project.panY.coerceIn(-1f, 1f) * 0.90f
         return MatrixTransformation { _ ->
             Matrix().apply {
                 setValues(floatArrayOf(
@@ -119,14 +119,20 @@ internal object MC2ExportRenderer {
         effects += Presentation.createForAspectRatio(
             VIDEO_APERTURE_RATIO, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
         )
+        // Establish the final 1:1 export canvas BEFORE composing the aperture.
+        // Without this stage Media3 retains a non-square frame and stretches the
+        // square template overlay to match that frame during export.
+        effects += Presentation.createForAspectRatio(
+            1f, Presentation.LAYOUT_SCALE_TO_FIT
+        )
         effects += buildApertureVideoTransform(project)
-        // Place the aperture-shaped frame directly into the square composition.
-        // Avoid an intermediate square letterbox: that extra Presentation scaled
-        // pan translations differently from TextureView's pixel-space pan.
+        // The square-fit stage maps the aperture-ratio image to 0.8214 of the
+        // square width. Scaling by 0.70 on both axes therefore places the video
+        // in the exact 0.575 × 0.70 aperture, centered at the preview coordinates.
         effects += MatrixTransformation { _ ->
             Matrix().apply {
                 setValues(floatArrayOf(
-                    0.575f, 0f, VIDEO_APERTURE_CENTER_X_NDC,
+                    0.70f, 0f, VIDEO_APERTURE_CENTER_X_NDC,
                     0f, 0.70f, VIDEO_APERTURE_CENTER_Y_NDC,
                     0f, 0f, 1f
                 ))
