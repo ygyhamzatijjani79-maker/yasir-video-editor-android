@@ -198,8 +198,15 @@ private fun applyPreviewTransform(
     val baseScale = max(vw / rotatedW.toFloat(), vh / rotatedH.toFloat())
     val userScale = (zoom.coerceIn(1f, 4f) / (1f - crop.coerceIn(0f, 0.4f))).coerceIn(1f, 7f)
     val scale = baseScale * userScale
+    // TextureView maps its decoded texture into the view's rectangular bounds.
+    // Convert the source-pixel scale independently on X and Y before rotating.
+    // Export applies these same source-relative scales in its square-frame matrix;
+    // using scale/scale here incorrectly treats view pixels as source pixels and
+    // causes portrait/landscape clips to crop and zoom differently after export.
+    val scaleX = scale * sourceW / vw
+    val scaleY = scale * sourceH / vh
     val matrix = Matrix().apply {
-        setScale(scale, scale, vw / 2f, vh / 2f)
+        setScale(scaleX, scaleY, vw / 2f, vh / 2f)
         postRotate(rotation, vw / 2f, vh / 2f)
         postTranslate(panX.coerceIn(-1f, 1f) * vw * 0.45f, panY.coerceIn(-1f, 1f) * vh * 0.45f)
     }
