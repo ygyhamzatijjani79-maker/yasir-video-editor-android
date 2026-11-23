@@ -180,13 +180,17 @@ private fun EditorScreen(
     var seekRequestMs by remember(project.id, project.video) { mutableLongStateOf(-1L) }
     var isScrubbing by remember(project.id, project.video) { mutableStateOf(false) }
     var durationMs by remember(project.id, project.video) { mutableLongStateOf(0L) }
+    LaunchedEffect(exporting) {
+        if (exporting) isPlaying = false
+    }
     val bg = if (darkMode) Color(0xFF101010) else Color.White
     val fg = if (darkMode) Color.White else Color(0xFF111111)
     val panel = if (darkMode) Color(0xFF202020) else Color(0xFFF1F1F1)
     val field = if (darkMode) Color(0xFF181818) else Color(0xFFFAFAFA)
     val tools = listOf("Trim", "Crop", "Zoom", "Lighting", "Contrast", "Colour", "Rotate", "Speed", "Audio", "Reset")
 
-    Column(Modifier.fillMaxSize().background(bg)) {
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().background(bg)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("‹ Projects", color = fg) }
             Spacer(Modifier.weight(1f))
@@ -200,7 +204,7 @@ private fun EditorScreen(
             zoom = project.zoom, panX = project.panX, panY = project.panY, crop = project.crop,
             brightness = project.brightness, contrast = project.contrast, saturation = project.saturation,
             rotation = project.rotation, speed = project.speed, volume = project.volume, muted = project.muted,
-            isPlaying = isPlaying,
+            isPlaying = isPlaying && !exporting,
             onPlaybackUpdate = { position, duration ->
                 if (!isScrubbing) playheadMs = position
                 durationMs = duration
@@ -296,6 +300,49 @@ private fun EditorScreen(
             }
             Button(onClick = onExport, enabled = !exporting && project.video.isNotBlank(), modifier = Modifier.fillMaxWidth().height(54.dp), colors = ButtonDefaults.buttonColors(containerColor = fg, contentColor = bg)) {
                 Text(if (exporting) "RENDERING MP4…  $exportProgress%" else "EXPORT  •  MP4", fontWeight = FontWeight.Bold)
+            }
+        }
+        }
+        if (exporting) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.78f))
+                    .clickable { },
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        modifier = Modifier.size(190.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            progress = { (exportProgress.coerceIn(0, 100) / 100f) },
+                            modifier = Modifier.fillMaxSize(),
+                            strokeWidth = 10.dp,
+                            color = Color.White,
+                            trackColor = Color.White.copy(alpha = 0.22f)
+                        )
+                        Text(
+                            "${exportProgress.coerceIn(0, 100)}%",
+                            color = Color.White,
+                            fontSize = 30.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(Modifier.height(22.dp))
+                    Text(
+                        "Ana sarrafa bidiyo…",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "Kada a rufe app har sai an gama",
+                        color = Color.White.copy(alpha = 0.75f),
+                        fontSize = 12.sp
+                    )
+                }
             }
         }
     }
