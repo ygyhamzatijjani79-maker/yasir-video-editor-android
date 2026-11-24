@@ -59,19 +59,39 @@ internal object MC2ExportRenderer {
      * crop/zoom result relative to the live TextureView.
      */
     @UnstableApi
-    private class PreviewMatchedApertureTransformation(
-        private val project: Project
-    ) : MatrixTransformation {
+    internal class PreviewMatchedApertureTransformation(initialProject: Project) : MatrixTransformation {
+        private var project: Project = initialProject
+        private var inputWidth: Int = 1
+        private var inputHeight: Int = 1
         private var transformationMatrix = Matrix()
 
+        /**
+         * Preview updates this same live effect object as the editor controls change.
+         * Export creates a fresh instance with the final project values. Both paths
+         * therefore execute the exact same Media3 matrix transformation.
+         */
+        @Synchronized
+        fun updateProject(updatedProject: Project) {
+            project = updatedProject
+            if (inputWidth > 1 && inputHeight > 1) rebuildMatrix()
+        }
+
+        @Synchronized
         override fun configure(inputWidth: Int, inputHeight: Int): Size {
-            val sourceWidth = inputWidth.coerceAtLeast(1).toFloat()
-            val sourceHeight = inputHeight.coerceAtLeast(1).toFloat()
+            this.inputWidth = inputWidth.coerceAtLeast(1)
+            this.inputHeight = inputHeight.coerceAtLeast(1)
+            rebuildMatrix()
+            return Size(VideoCompositionGeometry.OUTPUT_SIZE.toInt(), VideoCompositionGeometry.OUTPUT_SIZE.toInt())
+        }
+
+        @Synchronized
+        private fun rebuildMatrix() {
+            val sourceWidth = inputWidth.toFloat()
+            val sourceHeight = inputHeight.toFloat()
             val angle = Math.toRadians(project.rotation.toDouble())
             val cosine = kotlin.math.cos(angle).toFloat()
             val sine = kotlin.math.sin(angle).toFloat()
 
-            // Use the exact same fit/zoom/crop calculation as TextureView preview.
             val scale = VideoCompositionGeometry.calculateScale(
                 sourceWidth = sourceWidth,
                 sourceHeight = sourceHeight,
@@ -82,19 +102,11 @@ internal object MC2ExportRenderer {
                 crop = project.crop
             )
 
-            // Preview pan is 45% of the aperture in pixel space. Convert that
-            // exact displacement to square-frame NDC, including screen Y inversion.
-            val panX = project.panX.coerceIn(-1f, 1f) *
-                (2f * 0.45f * VIDEO_APERTURE_WIDTH)
-            val panY = -project.panY.coerceIn(-1f, 1f) *
-                (2f * 0.45f * VIDEO_APERTURE_HEIGHT)
-
+            val panX = project.panX.coerceIn(-1f, 1f) * (2f * 0.45f * VIDEO_APERTURE_WIDTH)
+            val panY = -project.panY.coerceIn(-1f, 1f) * (2f * 0.45f * VIDEO_APERTURE_HEIGHT)
             val widthScale = scale * sourceWidth / SIZE
             val heightScale = scale * sourceHeight / SIZE
 
-            // Input NDC has y-up coordinates; the preview TextureView uses y-down
-            // pixel coordinates. This matrix converts between them while rotating
-            // clockwise exactly as the preview's positive Android Matrix rotation.
             transformationMatrix = Matrix().apply {
                 setValues(floatArrayOf(
                     widthScale * cosine,
@@ -106,9 +118,9 @@ internal object MC2ExportRenderer {
                     0f, 0f, 1f
                 ))
             }
-            return Size(SIZE, SIZE)
         }
 
+        @Synchronized
         override fun getMatrix(presentationTimeUs: Long): Matrix =
             Matrix(transformationMatrix)
     }
