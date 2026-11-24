@@ -27,10 +27,10 @@ internal object MC2ExportRenderer {
     private val white = Color.WHITE
 
     // Preview viewport in the square composition, expressed as fractions of its size.
-    private const val VIDEO_APERTURE_WIDTH = 0.575f
-    private const val VIDEO_APERTURE_HEIGHT = 0.70f
-    private const val VIDEO_APERTURE_LEFT = 0.38f
-    private const val VIDEO_APERTURE_TOP = 0.055f
+    private const val VIDEO_APERTURE_WIDTH = VideoCompositionGeometry.APERTURE_WIDTH
+    private const val VIDEO_APERTURE_HEIGHT = VideoCompositionGeometry.APERTURE_HEIGHT
+    private const val VIDEO_APERTURE_LEFT = VideoCompositionGeometry.APERTURE_LEFT
+    private const val VIDEO_APERTURE_TOP = VideoCompositionGeometry.APERTURE_TOP
     // MatrixTransformation uses normalized device coordinates (-1..1).
     private const val VIDEO_APERTURE_CENTER_X_NDC =
         2f * (VIDEO_APERTURE_LEFT + VIDEO_APERTURE_WIDTH / 2f) - 1f
@@ -71,20 +71,16 @@ internal object MC2ExportRenderer {
             val cosine = kotlin.math.cos(angle).toFloat()
             val sine = kotlin.math.sin(angle).toFloat()
 
-            // Same rotated-bounds calculation used by applyPreviewTransform().
-            val rotatedWidth =
-                kotlin.math.abs(sourceWidth * cosine) + kotlin.math.abs(sourceHeight * sine)
-            val rotatedHeight =
-                kotlin.math.abs(sourceHeight * cosine) + kotlin.math.abs(sourceWidth * sine)
-            val baseScale = kotlin.math.max(
-                VIDEO_APERTURE_WIDTH * SIZE / rotatedWidth,
-                VIDEO_APERTURE_HEIGHT * SIZE / rotatedHeight
+            // Use the exact same fit/zoom/crop calculation as TextureView preview.
+            val scale = VideoCompositionGeometry.calculateScale(
+                sourceWidth = sourceWidth,
+                sourceHeight = sourceHeight,
+                viewportWidth = VIDEO_APERTURE_WIDTH * SIZE,
+                viewportHeight = VIDEO_APERTURE_HEIGHT * SIZE,
+                rotationDegrees = project.rotation,
+                zoom = project.zoom,
+                crop = project.crop
             )
-            val userScale = (
-                project.zoom.coerceIn(1f, 4f) /
-                    (1f - project.crop.coerceIn(0f, 0.4f))
-                ).coerceIn(1f, 7f)
-            val scale = baseScale * userScale
 
             // Preview pan is 45% of the aperture in pixel space. Convert that
             // exact displacement to square-frame NDC, including screen Y inversion.
