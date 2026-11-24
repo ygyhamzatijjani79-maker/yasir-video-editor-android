@@ -14,7 +14,11 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
@@ -37,6 +41,22 @@ import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.max
+
+private data class PreviewTransformKey(
+    val viewWidth: Int,
+    val viewHeight: Int,
+    val videoWidth: Int,
+    val videoHeight: Int,
+    val pixelWidthHeightRatio: Float,
+    val zoom: Float,
+    val panX: Float,
+    val panY: Float,
+    val crop: Float,
+    val rotation: Float,
+    val brightness: Float,
+    val contrast: Float,
+    val saturation: Float
+)
 
 @Composable
 @OptIn(UnstableApi::class)
@@ -62,10 +82,28 @@ fun MC2TemplatePreview(
     onTransformChange: (Float, Float, Float) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
+    val previewProject = Project(
+        name = "Preview",
+        description = description,
+        teacher = teacher,
+        brightness = brightness,
+        crop = crop,
+        zoom = zoom,
+        panX = panX,
+        panY = panY,
+        contrast = contrast,
+        saturation = saturation,
+        rotation = rotation
+    )
+    val latestProject by rememberUpdatedState(previewProject)
     val latestZoom by rememberUpdatedState(zoom)
     val latestPanX by rememberUpdatedState(panX)
     val latestPanY by rememberUpdatedState(panY)
     val latestTransform by rememberUpdatedState(onTransformChange)
+    var previewTextureView by remember(videoUri) { mutableStateOf<TextureView?>(null) }
+    // Remember the last state-driven transform so template animation recompositions
+    // do not overwrite a gesture's live TextureView matrix with stale project values.
+    val lastAppliedTransformKey = remember(videoUri) { mutableListOf<PreviewTransformKey?>(null) }
     var playerPositionMs by remember(videoUri) { mutableLongStateOf(0L) }
 
     val player = remember(videoUri) {
@@ -120,6 +158,45 @@ fun MC2TemplatePreview(
         ).asImageBitmap()
     }
 
+    fun gesturePanLimits(viewportWidth: Int, viewportHeight: Int, forZoom: Float): Pair<Float, Float> {
+        val videoSize = player?.videoSize
+        val pixelRatio = videoSize?.pixelWidthHeightRatio
+            ?.takeIf { it.isFinite() && it > 0f } ?: 1f
+        val sourceWidth = videoSize?.width?.takeIf { it > 0 }
+            ?.toFloat()?.times(pixelRatio) ?: viewportWidth.toFloat()
+        val sourceHeight = videoSize?.height?.takeIf { it > 0 }
+            ?.toFloat() ?: viewportHeight.toFloat()
+        return VideoCompositionGeometry.calculatePanLimits(
+            sourceWidth = sourceWidth,
+            sourceHeight = sourceHeight,
+            viewportWidth = viewportWidth.toFloat(),
+            viewportHeight = viewportHeight.toFloat(),
+            rotationDegrees = latestProject.rotation,
+            zoom = forZoom,
+            crop = latestProject.crop
+        )
+    }
+
+    fun applyGestureTransform(gestureZoom: Float, gesturePanX: Float, gesturePanY: Float) {
+        val videoSize = player?.videoSize
+        previewTextureView?.let { view ->
+            applyPreviewTransform(
+                view = view,
+                videoWidth = videoSize?.width ?: 0,
+                videoHeight = videoSize?.height ?: 0,
+                pixelWidthHeightRatio = videoSize?.pixelWidthHeightRatio ?: 1f,
+                zoom = gestureZoom,
+                panX = gesturePanX,
+                panY = gesturePanY,
+                crop = latestProject.crop,
+                rotation = latestProject.rotation,
+                brightness = latestProject.brightness,
+                contrast = latestProject.contrast,
+                saturation = latestProject.saturation
+            )
+        }
+    }
+
     BoxWithConstraints(
         modifier = modifier.aspectRatio(1f).clip(RoundedCornerShape(18.dp)).background(Color(0xFF064226))
     ) {
@@ -131,11 +208,92 @@ fun MC2TemplatePreview(
                 .size(videoWidth, videoHeight)
                 .clip(RoundedCornerShape(22.dp))
                 .pointerInput(videoUri) {
-                    detectTransformGestures { _, pan, scaleChange, _ ->
-                        val nextZoom = (latestZoom * scaleChange).coerceIn(1f, 4f)
-                        val nextPanX = if (nextZoom <= 1.01f) 0f else (latestPanX + pan.x / size.width / nextZoom * 1.5f).coerceIn(-1f, 1f)
-                        val nextPanY = if (nextZoom <= 1.01f) 0f else (latestPanY + pan.y / size.height / nextZoom * 1.5f).coerceIn(-1f, 1f)
-                        latestTransform(nextZoom, nextPanX, nextPanY)
+                    // One-finger repositioning is deliberately gated by a real
+                    // long press, so ordinary taps and swipes cannot move the clip.
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val longPress = awaitLongPressOrCancellation(down.id)
+                            ?: return@awaitEachGesture
+                        var activePointerId = down.id
+                        var lastPosition = longPress.position
+                        var gestureZoom = latestZoom
+                        var gesturePanX = latestPanX
+                        var gesturePanY = latestPanY
+                        var changed = false
+                        longPress.consume()
+
+                        var event = currentEvent
+                        while (event.changes.any { it.pressed }) {
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.size == 1) {
+                                val pointer = pressed.firstOrNull { it.id == activePointerId }
+                                    ?: pressed.first().also {
+                                        activePointerId = it.id
+                                        lastPosition = it.position
+                                    }
+                                val drag = pointer.position - lastPosition
+                                if (kotlin.math.abs(drag.x) > 0.25f || kotlin.math.abs(drag.y) > 0.25f) {
+                                    val (limitX, limitY) = gesturePanLimits(size.width, size.height, gestureZoom)
+                                    val nextPanX = (gesturePanX +
+                                        drag.x / size.width / gestureZoom * 1.5f).coerceIn(-limitX, limitX)
+                                    val nextPanY = (gesturePanY +
+                                        drag.y / size.height / gestureZoom * 1.5f).coerceIn(-limitY, limitY)
+                                    if (nextPanX != gesturePanX || nextPanY != gesturePanY) {
+                                        gesturePanX = nextPanX
+                                        gesturePanY = nextPanY
+                                        changed = true
+                                        pointer.consume()
+                                        applyGestureTransform(gestureZoom, gesturePanX, gesturePanY)
+                                    }
+                                }
+                                lastPosition = pointer.position
+                            } else if (pressed.size >= 2) {
+                                // The inner pinch detector owns these events.
+                                pressed.firstOrNull { it.id == activePointerId }?.let {
+                                    lastPosition = it.position
+                                }
+                            }
+                            event = awaitPointerEvent()
+                        }
+                        if (changed) latestTransform(gestureZoom, gesturePanX, gesturePanY)
+                    }
+                }
+                .pointerInput(videoUri) {
+                    // A separate multi-pointer detector starts pinch immediately;
+                    // it does not wait for the one-finger long-press timeout.
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        var gestureZoom = latestZoom
+                        var gesturePanX = latestPanX
+                        var gesturePanY = latestPanY
+                        var changed = false
+                        var event = awaitPointerEvent()
+                        while (event.changes.any { it.pressed }) {
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.size >= 2) {
+                                val scaleChange = event.calculateZoom()
+                                val pan = event.calculatePan()
+                                val nextZoom = (gestureZoom * scaleChange).coerceIn(1f, 4f)
+                                val (limitX, limitY) = gesturePanLimits(size.width, size.height, nextZoom)
+                                val nextPanX = (gesturePanX +
+                                    pan.x / size.width / nextZoom * 1.5f).coerceIn(-limitX, limitX)
+                                val nextPanY = (gesturePanY +
+                                    pan.y / size.height / nextZoom * 1.5f).coerceIn(-limitY, limitY)
+                                if (nextZoom != gestureZoom ||
+                                    nextPanX != gesturePanX ||
+                                    nextPanY != gesturePanY
+                                ) {
+                                    gestureZoom = nextZoom
+                                    gesturePanX = nextPanX
+                                    gesturePanY = nextPanY
+                                    changed = true
+                                    event.changes.forEach { if (it.pressed) it.consume() }
+                                    applyGestureTransform(gestureZoom, gesturePanX, gesturePanY)
+                                }
+                            }
+                            event = awaitPointerEvent()
+                        }
+                        if (changed) latestTransform(gestureZoom, gesturePanX, gesturePanY)
                     }
                 },
             contentAlignment = Alignment.Center
@@ -143,14 +301,17 @@ fun MC2TemplatePreview(
             if (player != null) {
                 AndroidView(
                     factory = { ctx -> TextureView(ctx).also { view ->
+                        previewTextureView = view
                         player.setVideoTextureView(view)
                         view.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                     } },
                     update = { view ->
-                        applyPreviewTransform(
-                            view = view,
+                        val key = PreviewTransformKey(
+                            viewWidth = view.width,
+                            viewHeight = view.height,
                             videoWidth = player.videoSize.width,
                             videoHeight = player.videoSize.height,
+                            pixelWidthHeightRatio = player.videoSize.pixelWidthHeightRatio,
                             zoom = zoom,
                             panX = panX,
                             panY = panY,
@@ -160,6 +321,23 @@ fun MC2TemplatePreview(
                             contrast = contrast,
                             saturation = saturation
                         )
+                        if (lastAppliedTransformKey[0] != key) {
+                            applyPreviewTransform(
+                                view = view,
+                                videoWidth = player.videoSize.width,
+                                videoHeight = player.videoSize.height,
+                                pixelWidthHeightRatio = player.videoSize.pixelWidthHeightRatio,
+                                zoom = zoom,
+                                panX = panX,
+                                panY = panY,
+                                crop = crop,
+                                rotation = rotation,
+                                brightness = brightness,
+                                contrast = contrast,
+                                saturation = saturation
+                            )
+                            lastAppliedTransformKey[0] = key
+                        }
                     },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -175,6 +353,7 @@ private fun applyPreviewTransform(
     view: TextureView,
     videoWidth: Int,
     videoHeight: Int,
+    pixelWidthHeightRatio: Float = 1f,
     zoom: Float,
     panX: Float,
     panY: Float,
@@ -188,7 +367,11 @@ private fun applyPreviewTransform(
     val vh = view.height.toFloat()
     if (vw <= 0f || vh <= 0f) return
 
-    val sourceW = videoWidth.takeIf { it > 0 }?.toFloat() ?: vw
+    // Media3 reports non-square-pixel (anamorphic) clips through this ratio.
+    // Include it in the source display width before calculating fit/crop so
+    // TextureView does not stretch those clips to the aperture's aspect ratio.
+    val safePixelRatio = pixelWidthHeightRatio.takeIf { it.isFinite() && it > 0f } ?: 1f
+    val sourceW = videoWidth.takeIf { it > 0 }?.toFloat()?.times(safePixelRatio) ?: vw
     val sourceH = videoHeight.takeIf { it > 0 }?.toFloat() ?: vh
     val scale = VideoCompositionGeometry.calculateScale(
         sourceWidth = sourceW,

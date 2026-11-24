@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
+import android.util.Log
 import android.provider.MediaStore
 import android.widget.VideoView
 import androidx.activity.ComponentActivity
@@ -453,9 +455,13 @@ private fun shareProject(context: Context, project: Project) {
 private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, done: (String) -> Unit) {
     lifecycleScope.launch {
         val output = File(cacheDir, "mc2_${project.id}.mp4")
+        val exportStartedAtMs = SystemClock.elapsedRealtime()
         var exportStageFinished = false
         try {
             if (output.exists()) output.delete()
+            // Let Media3 select the device's best available encoder settings.
+            // A fixed low bitrate can reduce visual quality and does not guarantee
+            // faster rendering. Hardware codec selection remains device-specific.
             val encoderFactory = DefaultEncoderFactory.Builder(this@exportMp4)
                 .setEnableFallback(true)
                 .build()
@@ -469,7 +475,16 @@ private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, 
                 ) {
                     exportStageFinished = true
                     onProgress(95)
+                    val renderElapsedMs = SystemClock.elapsedRealtime() - exportStartedAtMs
+                    Log.i(
+                        "MC2Export",
+                        "renderComplete elapsedMs=$renderElapsedMs encoder=${exportResult.videoEncoderName} " +
+                            "videoProcess=${exportResult.videoConversionProcess} frames=${exportResult.videoFrameCount} " +
+                            "sizeBytes=${exportResult.fileSizeBytes} outputBytes=${output.length()} " +
+                            "dimensions=${exportResult.width}x${exportResult.height}"
+                    )
                     lifecycleScope.launch(Dispatchers.IO) {
+                        val saveStartedAtMs = SystemClock.elapsedRealtime()
                         var savedUri: Uri? = null
                         try {
                             val safeName = project.name
@@ -489,7 +504,7 @@ private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, 
                                 ?: throw IllegalStateException("Could not open MP4 output stream")
                             destination.use { out ->
                                 output.inputStream().use { input ->
-                                    val buffer = ByteArray(1024 * 1024)
+                                    val buffer = ByteArray(4 * 1024 * 1024)
                                     var copied = 0L
                                     while (true) {
                                         val count = input.read(buffer)
@@ -504,6 +519,12 @@ private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, 
                             }
                             val publish = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
                             contentResolver.update(savedUri!!, publish, null, null)
+                            val saveElapsedMs = SystemClock.elapsedRealtime() - saveStartedAtMs
+                            Log.i(
+                                "MC2Export",
+                                "saveComplete elapsedMs=$saveElapsedMs totalElapsedMs=${SystemClock.elapsedRealtime() - exportStartedAtMs} " +
+                                    "fileBytes=$totalBytes"
+                            )
                             withContext(Dispatchers.Main) {
                                 onProgress(100)
                                 done("An adana MP4 a Movies/MC2 ISLAMIC TV")
@@ -525,6 +546,11 @@ private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, 
                     exportException: androidx.media3.transformer.ExportException
                 ) {
                     exportStageFinished = true
+                    Log.e(
+                        "MC2Export",
+                        "renderFailed elapsedMs=${SystemClock.elapsedRealtime() - exportStartedAtMs} code=${exportException.errorCode}",
+                        exportException
+                    )
                     output.delete()
                     val causeText = generateSequence<Throwable>(exportException) { it.cause }
                         .mapNotNull { it.message }
