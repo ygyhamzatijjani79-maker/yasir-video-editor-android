@@ -14,7 +14,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
@@ -26,6 +26,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.awaitFirstDown
+import androidx.compose.ui.input.pointer.calculatePan
+import androidx.compose.ui.input.pointer.calculateZoom
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -82,6 +85,7 @@ fun MC2TemplatePreview(
     // project snapshot changes the next frame without rebuilding the player pipeline.
     SideEffect { previewTransform.updateProject(previewProject) }
 
+    val latestProject by rememberUpdatedState(previewProject)
     val latestZoom by rememberUpdatedState(zoom)
     val latestPanX by rememberUpdatedState(panX)
     val latestPanY by rememberUpdatedState(panY)
@@ -173,13 +177,49 @@ fun MC2TemplatePreview(
                 )
                 .clip(RoundedCornerShape(22.dp))
                 .pointerInput(videoUri) {
-                    detectTransformGestures { _, pan, scaleChange, _ ->
-                        val nextZoom = (latestZoom * scaleChange).coerceIn(1f, 4f)
-                        val nextPanX = if (nextZoom <= 1.01f) 0f else
-                            (latestPanX + pan.x / size.width / nextZoom * 1.5f).coerceIn(-1f, 1f)
-                        val nextPanY = if (nextZoom <= 1.01f) 0f else
-                            (latestPanY + pan.y / size.height / nextZoom * 1.5f).coerceIn(-1f, 1f)
-                        latestTransform(nextZoom, nextPanX, nextPanY)
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        var gestureZoom = latestZoom
+                        var gesturePanX = latestPanX
+                        var gesturePanY = latestPanY
+                        var changed = false
+
+                        do {
+                            val event = awaitPointerEvent()
+                            if (event.changes.any { it.pressed }) {
+                                val scaleChange = event.calculateZoom()
+                                val pan = event.calculatePan()
+                                val nextZoom = (gestureZoom * scaleChange).coerceIn(1f, 4f)
+                                val nextPanX = if (nextZoom <= 1.01f) 0f else
+                                    (gesturePanX + pan.x / size.width / nextZoom * 1.5f).coerceIn(-1f, 1f)
+                                val nextPanY = if (nextZoom <= 1.01f) 0f else
+                                    (gesturePanY + pan.y / size.height / nextZoom * 1.5f).coerceIn(-1f, 1f)
+
+                                if (kotlin.math.abs(scaleChange - 1f) > 0.001f ||
+                                    kotlin.math.abs(pan.x) > 0.5f ||
+                                    kotlin.math.abs(pan.y) > 0.5f
+                                ) {
+                                    gestureZoom = nextZoom
+                                    gesturePanX = nextPanX
+                                    gesturePanY = nextPanY
+                                    // Update the live preview transform immediately, but only
+                                    // commit to the project once when the fingers are lifted.
+                                    previewTransform.updateProject(
+                                        latestProject.copy(
+                                            zoom = gestureZoom,
+                                            panX = gesturePanX,
+                                            panY = gesturePanY
+                                        )
+                                    )
+                                    changed = true
+                                    event.changes.forEach { if (it.pressed) it.consume() }
+                                }
+                            }
+                        } while (event.changes.any { it.pressed })
+
+                        if (changed) {
+                            latestTransform(gestureZoom, gesturePanX, gesturePanY)
+                        }
                     }
                 }
         )
