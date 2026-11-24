@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
+import android.util.Log
 import android.provider.MediaStore
 import android.widget.VideoView
 import androidx.activity.ComponentActivity
@@ -42,7 +44,6 @@ import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.DefaultEncoderFactory
-import androidx.media3.transformer.VideoEncoderSettings
 import androidx.media3.transformer.ProgressHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -55,7 +56,6 @@ private val Emerald = Color(0xFF064B2B)
 private val Gold = Color(0xFFD9A928)
 private val Cream = Color(0xFFFFF3D6)
 private val Ink = Color(0xFF14251B)
-private const val EXPORT_VIDEO_BITRATE_BPS = 1_500_000
 
 data class TextClip(val id: String = UUID.randomUUID().toString(), val text: String, val startMs: Long, val endMs: Long)
 data class Project(val id: String = UUID.randomUUID().toString(), val name: String, val video: String = "", val description: String = "", val teacher: String = "", val overlays: List<TextClip> = emptyList(), val brightness: Float = 0f, val crop: Float = 0f, val zoom: Float = 1f, val panX: Float = 0f, val panY: Float = 0f, val contrast: Float = 0f, val saturation: Float = 0f, val rotation: Float = 0f, val speed: Float = 1f, val volume: Float = 1f, val trimStartMs: Long = 0L, val trimEndMs: Long = 0L, val muted: Boolean = false, val updated: Long = System.currentTimeMillis())
@@ -455,16 +455,14 @@ private fun shareProject(context: Context, project: Project) {
 private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, done: (String) -> Unit) {
     lifecycleScope.launch {
         val output = File(cacheDir, "mc2_${project.id}.mp4")
+        val exportStartedAtMs = SystemClock.elapsedRealtime()
         var exportStageFinished = false
         try {
             if (output.exists()) output.delete()
-            // Keep the square 1080p composition, but request a moderate VBR
-            // bitrate to reduce MP4 size without changing brightness or geometry.
-            val videoEncoderSettings = VideoEncoderSettings.Builder()
-                .setBitrate(EXPORT_VIDEO_BITRATE_BPS)
-                .build()
+            // Let Media3 select the device's best available encoder settings.
+            // A fixed low bitrate can reduce visual quality and does not guarantee
+            // faster rendering. Hardware codec selection remains device-specific.
             val encoderFactory = DefaultEncoderFactory.Builder(this@exportMp4)
-                .setRequestedVideoEncoderSettings(videoEncoderSettings)
                 .setEnableFallback(true)
                 .build()
             val transformer = Transformer.Builder(this@exportMp4)
@@ -477,7 +475,16 @@ private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, 
                 ) {
                     exportStageFinished = true
                     onProgress(95)
+                    val renderElapsedMs = SystemClock.elapsedRealtime() - exportStartedAtMs
+                    Log.i(
+                        "MC2Export",
+                        "renderComplete elapsedMs=$renderElapsedMs encoder=${exportResult.videoEncoderName} " +
+                            "videoProcess=${exportResult.videoConversionProcess} frames=${exportResult.videoFrameCount} " +
+                            "sizeBytes=${exportResult.fileSizeBytes} outputBytes=${output.length()} " +
+                            "dimensions=${exportResult.width}x${exportResult.height}"
+                    )
                     lifecycleScope.launch(Dispatchers.IO) {
+                        val saveStartedAtMs = SystemClock.elapsedRealtime()
                         var savedUri: Uri? = null
                         try {
                             val safeName = project.name
@@ -497,7 +504,7 @@ private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, 
                                 ?: throw IllegalStateException("Could not open MP4 output stream")
                             destination.use { out ->
                                 output.inputStream().use { input ->
-                                    val buffer = ByteArray(1024 * 1024)
+                                    val buffer = ByteArray(4 * 1024 * 1024)
                                     var copied = 0L
                                     while (true) {
                                         val count = input.read(buffer)
@@ -512,6 +519,12 @@ private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, 
                             }
                             val publish = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
                             contentResolver.update(savedUri!!, publish, null, null)
+                            val saveElapsedMs = SystemClock.elapsedRealtime() - saveStartedAtMs
+                            Log.i(
+                                "MC2Export",
+                                "saveComplete elapsedMs=$saveElapsedMs totalElapsedMs=${SystemClock.elapsedRealtime() - exportStartedAtMs} " +
+                                    "fileBytes=$totalBytes"
+                            )
                             withContext(Dispatchers.Main) {
                                 onProgress(100)
                                 done("An adana MP4 a Movies/MC2 ISLAMIC TV")
@@ -533,6 +546,11 @@ private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, 
                     exportException: androidx.media3.transformer.ExportException
                 ) {
                     exportStageFinished = true
+                    Log.e(
+                        "MC2Export",
+                        "renderFailed elapsedMs=${SystemClock.elapsedRealtime() - exportStartedAtMs} code=${exportException.errorCode}",
+                        exportException
+                    )
                     output.delete()
                     val causeText = generateSequence<Throwable>(exportException) { it.cause }
                         .mapNotNull { it.message }
