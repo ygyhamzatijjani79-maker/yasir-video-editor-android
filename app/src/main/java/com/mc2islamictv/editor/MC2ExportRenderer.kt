@@ -19,6 +19,33 @@ import androidx.media3.common.util.Size
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
 
+/**
+ * Reusable paint objects for the animated template renderer. The export overlay
+ * keeps one cache for its lifetime, avoiding dozens of Paint allocations per frame.
+ */
+internal class TemplateDrawingCache {
+    val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    val line = Paint(Paint.ANTI_ALIAS_FLAG)
+    val fineGold = Paint(Paint.ANTI_ALIAS_FLAG)
+    val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.create("sans-serif", Typeface.BOLD)
+    }
+    val pattern = Paint(Paint.ANTI_ALIAS_FLAG)
+    val glow = Paint(Paint.ANTI_ALIAS_FLAG)
+    val petal = Paint(Paint.ANTI_ALIAS_FLAG)
+    val centre = Paint(Paint.ANTI_ALIAS_FLAG)
+    val ornament = Paint(Paint.ANTI_ALIAS_FLAG)
+    val footerBackground = Paint(Paint.ANTI_ALIAS_FLAG)
+    val footerStroke = Paint(Paint.ANTI_ALIAS_FLAG)
+    val footerSolid = Paint(Paint.ANTI_ALIAS_FLAG)
+    val footerText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.create("sans-serif", Typeface.BOLD)
+    }
+    val footerAccent = Paint(Paint.ANTI_ALIAS_FLAG)
+}
+
 @UnstableApi
 internal object MC2ExportRenderer {
     private const val SIZE = 1080
@@ -179,15 +206,20 @@ internal object MC2ExportRenderer {
         return bitmap
     }
 
-    internal fun drawTemplate(canvas: Canvas, project: Project, phase: Float) {
+    internal fun drawTemplate(
+        canvas: Canvas,
+        project: Project,
+        phase: Float,
+        cache: TemplateDrawingCache = TemplateDrawingCache()
+    ) {
         val t = ((phase % 1f) + 1f) % 1f
         val green = cycleColor(t, intArrayOf(Color.rgb(0, 66, 38), Color.rgb(12, 39, 70), Color.rgb(61, 27, 64)))
         val gold = cycleColor(t, intArrayOf(Color.rgb(220, 170, 35), Color.rgb(88, 199, 222), Color.rgb(231, 162, 92)))
         val pulse = 0.85f + 0.15f * kotlin.math.sin(t * Math.PI * 8).toFloat()
-        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-        val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 13f * pulse; color = gold }
-        val fineGold = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f; color = gold }
-        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = Typeface.create("sans-serif", Typeface.BOLD) }
+        val fill = cache.fill.apply { style = Paint.Style.FILL }
+        val line = cache.line.apply { style = Paint.Style.STROKE; strokeWidth = 13f * pulse; color = gold }
+        val fineGold = cache.fineGold.apply { style = Paint.Style.STROKE; strokeWidth = 3f; color = gold }
+        val text = cache.text
 
         // Clip around the video aperture so its pixels remain transparent in the overlay texture.
         val aperture = Path().apply {
@@ -199,7 +231,7 @@ internal object MC2ExportRenderer {
 
         fill.color = green
         canvas.drawRect(0f, 0f, SIZE.toFloat(), SIZE.toFloat(), fill)
-        val pattern = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = blend(green, gold, 0.13f); style = Paint.Style.STROKE; strokeWidth = 2f }
+        val pattern = cache.pattern.apply { color = blend(green, gold, 0.13f); style = Paint.Style.STROKE; strokeWidth = 2f }
         for (x in -100..1180 step 80) {
             canvas.drawLine(x.toFloat(), 0f, (x + 1080).toFloat(), 1080f, pattern)
             canvas.drawLine(x.toFloat(), 1080f, (x + 1080).toFloat(), 0f, pattern)
@@ -212,8 +244,8 @@ internal object MC2ExportRenderer {
         flowerPoints.forEachIndexed { index, point ->
             val cx = point.first
             val cy = point.second
-            val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = gold; style = Paint.Style.FILL; alpha = 38 }
-            val petalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            val glow = cache.glow.apply { color = gold; style = Paint.Style.FILL; alpha = 38 }
+            val petalPaint = cache.petal.apply {
                 color = gold; style = Paint.Style.FILL
                 alpha = (150 + 90 * (0.5f + 0.5f * kotlin.math.sin(t * Math.PI * 6).toFloat())).toInt().coerceIn(0, 240)
             }
@@ -226,7 +258,7 @@ internal object MC2ExportRenderer {
                 canvas.drawCircle(cx, cy - 22f, 13f, petalPaint)
                 canvas.restore()
             }
-            val centre = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = cream; style = Paint.Style.FILL }
+            val centre = cache.centre.apply { color = cream; style = Paint.Style.FILL }
             canvas.drawCircle(cx, cy, 8f, centre)
             canvas.restore()
         }
@@ -238,7 +270,7 @@ internal object MC2ExportRenderer {
         fill.color = cream; canvas.drawPath(b, fill); canvas.drawPath(b, line)
         text.color = black; text.textSize = 42f
         drawWrapped(canvas, project.description.ifBlank { "DESCRIPTION" }, 206f, 350f, 275f, text, 54f, 8)
-        val ornament = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = gold; style = Paint.Style.STROKE; strokeWidth = 5f }
+        val ornament = cache.ornament.apply { color = gold; style = Paint.Style.STROKE; strokeWidth = 5f }
         canvas.drawLine(105f, 705f, 307f, 705f, ornament)
         canvas.save()
         canvas.rotate(t * 360f, 206f, 705f)
@@ -254,29 +286,32 @@ internal object MC2ExportRenderer {
         canvas.drawRoundRect(nameplate, 74f, 74f, line)
         text.color = white; text.textSize = 58f
         drawFit(canvas, project.teacher.ifBlank { "TEACHER NAME" }, 540f, 910f, 790f, text)
-        drawSocialFooter(canvas)
+        drawSocialFooter(canvas, cache)
     }
 
 
-    private fun drawSocialFooter(canvas: Canvas) {
+    private fun drawSocialFooter(canvas: Canvas, cache: TemplateDrawingCache) {
         val xs = floatArrayOf(300f, 380f, 460f, 540f, 620f, 700f, 780f)
         val colors = intArrayOf(Color.BLACK, Color.rgb(37,211,102), Color.rgb(225,48,108), Color.rgb(24,119,242), Color.RED, Color.BLACK, Color.rgb(34,158,217))
         xs.forEachIndexed { i, x ->
-            val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colors[i] }
-            val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 4.5f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
-            val solid = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+            val bg = cache.footerBackground.apply { color = colors[i]; style = Paint.Style.FILL }
+            val stroke = cache.footerStroke.apply {
+                color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 4.5f
+                strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+            }
+            val solid = cache.footerSolid.apply { color = Color.WHITE; style = Paint.Style.FILL }
             canvas.drawCircle(x, 958f, 24f, bg)
             when (i) {
                 0 -> { stroke.strokeWidth = 5f; canvas.drawLine(x+4f,943f,x+4f,962f,stroke); canvas.drawLine(x+4f,943f,x+14f,946f,stroke); canvas.drawCircle(x-3f,965f,6f,solid) }
                 1 -> { val bubble=Path().apply { moveTo(x-13f,945f); lineTo(x+11f,945f); lineTo(x+14f,960f); lineTo(x+8f,970f); lineTo(x-8f,970f); lineTo(x-16f,976f); close() }; canvas.drawPath(bubble,stroke); val phone=Path().apply { moveTo(x-7f,951f); cubicTo(x-4f,962f,x+2f,966f,x+8f,962f) }; canvas.drawPath(phone,stroke) }
                 2 -> { canvas.drawRoundRect(RectF(x-14f,944f,x+14f,972f),7f,7f,stroke); canvas.drawCircle(x,958f,7f,stroke); canvas.drawCircle(x+8f,950f,2f,solid) }
-                3 -> { val t=Paint(Paint.ANTI_ALIAS_FLAG).apply { color=Color.WHITE; textAlign=Paint.Align.CENTER; textSize=37f; typeface=Typeface.create("sans-serif",Typeface.BOLD) }; canvas.drawText("f",x+1f,971f,t) }
-                4 -> { canvas.drawRoundRect(RectF(x-15f,948f,x+15f,968f),6f,6f,solid); val tri=Path().apply { moveTo(x-3f,952f); lineTo(x+8f,958f); lineTo(x-3f,964f); close() }; val red=Paint(Paint.ANTI_ALIAS_FLAG).apply { color=colors[i] }; canvas.drawPath(tri,red) }
+                3 -> { val t=cache.footerText.apply { color=Color.WHITE; textAlign=Paint.Align.CENTER; textSize=37f }; canvas.drawText("f",x+1f,971f,t) }
+                4 -> { canvas.drawRoundRect(RectF(x-15f,948f,x+15f,968f),6f,6f,solid); val tri=Path().apply { moveTo(x-3f,952f); lineTo(x+8f,958f); lineTo(x-3f,964f); close() }; val red=cache.footerAccent.apply { color=colors[i]; style=Paint.Style.FILL }; canvas.drawPath(tri,red) }
                 5 -> { stroke.strokeWidth=4f; canvas.drawLine(x-11f,946f,x+11f,970f,stroke); canvas.drawLine(x+10f,946f,x-10f,970f,stroke) }
                 6 -> { val plane=Path().apply { moveTo(x-15f,957f); lineTo(x+15f,946f); lineTo(x+7f,972f); lineTo(x,963f); lineTo(x-7f,968f); lineTo(x-5f,960f); close() }; canvas.drawPath(plane,solid) }
             }
         }
-        val handle=Paint(Paint.ANTI_ALIAS_FLAG).apply { color=Color.WHITE; textAlign=Paint.Align.CENTER; textSize=29f; typeface=Typeface.create("sans-serif",Typeface.BOLD) }
+        val handle=cache.footerText.apply { color=Color.WHITE; textAlign=Paint.Align.CENTER; textSize=29f }
         canvas.drawText("@MC2 ISLAMIC TV",540f,1008f,handle)
     }
 
@@ -314,6 +349,7 @@ internal object MC2ExportRenderer {
 
 @UnstableApi
 private class AnimatedTemplateOverlay(private val project: Project) : CanvasOverlay(true) {
+    private val drawingCache = TemplateDrawingCache()
     // OverlayEffect receives the final square frame after both Presentation effects.
     // Matching that actual frame size guarantees a full-frame template texture.
     override fun onDraw(canvas: Canvas, presentationTimeUs: Long) {
@@ -321,7 +357,7 @@ private class AnimatedTemplateOverlay(private val project: Project) : CanvasOver
         canvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
         canvas.save()
         canvas.scale(canvas.width / 1080f, canvas.height / 1080f)
-        MC2ExportRenderer.drawTemplate(canvas, project, phase)
+        MC2ExportRenderer.drawTemplate(canvas, project, phase, drawingCache)
         canvas.restore()
     }
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
