@@ -78,16 +78,7 @@ fun MC2TemplatePreview(
         saturation = saturation,
         rotation = rotation
     )
-    var transformGestureActive by remember(videoUri) { mutableStateOf(false) }
-    val previewTransform = remember(videoUri) {
-        MC2ExportRenderer.PreviewMatchedApertureTransformation(previewProject)
-    }
-    // Keep one Media3 transform instance alive during playback. Updating its
-    // project snapshot changes the next frame without rebuilding the player pipeline.
-    SideEffect {
-        if (!transformGestureActive) previewTransform.updateProject(previewProject)
-    }
-
+    var previewTextureView by remember(videoUri) { mutableStateOf<TextureView?>(null) }
     val latestProject by rememberUpdatedState(previewProject)
     val latestZoom by rememberUpdatedState(zoom)
     val latestPanX by rememberUpdatedState(panX)
@@ -95,7 +86,7 @@ fun MC2TemplatePreview(
     val latestTransform by rememberUpdatedState(onTransformChange)
     var playerPositionMs by remember(videoUri) { mutableLongStateOf(0L) }
 
-    val player = remember(videoUri, previewTransform) {
+    val player = remember(videoUri) {
         if (videoUri.isBlank()) null else ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.parse(videoUri)))
             repeatMode = ExoPlayer.REPEAT_MODE_ONE
@@ -107,8 +98,6 @@ fun MC2TemplatePreview(
                 true
             )
             setHandleAudioBecomingNoisy(true)
-            // Preview and export now run the exact same Media3 aperture transform.
-            setVideoEffects(listOf(previewTransform))
             prepare()
             playWhenReady = true
         }
@@ -146,11 +135,70 @@ fun MC2TemplatePreview(
     }
 
     BoxWithConstraints(
-        modifier = modifier.aspectRatio(1f).clip(RoundedCornerShape(18.dp)).background(Color(0xFF064226))
+        modifier = modifier.aspectRatio(1f).clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF064226))
+            .pointerInput(videoUri) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val left = size.width * VideoCompositionGeometry.APERTURE_LEFT
+                    val right = left + size.width * VideoCompositionGeometry.APERTURE_WIDTH
+                    val top = size.height * VideoCompositionGeometry.APERTURE_TOP
+                    val bottom = top + size.height * VideoCompositionGeometry.APERTURE_HEIGHT
+                    if (down.position.x < left || down.position.x > right ||
+                        down.position.y < top || down.position.y > bottom
+                    ) return@awaitEachGesture
+
+                    var gestureZoom = latestZoom
+                    var gesturePanX = latestPanX
+                    var gesturePanY = latestPanY
+                    var changed = false
+                    do {
+                        val event = awaitPointerEvent()
+                        if (event.changes.any { it.pressed }) {
+                            val scaleChange = event.calculateZoom()
+                            val pan = event.calculatePan()
+                            val nextZoom = (gestureZoom * scaleChange).coerceIn(1f, 4f)
+                            val apertureWidthPx = size.width * VideoCompositionGeometry.APERTURE_WIDTH
+                            val apertureHeightPx = size.height * VideoCompositionGeometry.APERTURE_HEIGHT
+                            val nextPanX = if (nextZoom <= 1.01f) 0f else
+                                (gesturePanX + pan.x / apertureWidthPx / nextZoom * 1.5f).coerceIn(-1f, 1f)
+                            val nextPanY = if (nextZoom <= 1.01f) 0f else
+                                (gesturePanY + pan.y / apertureHeightPx / nextZoom * 1.5f).coerceIn(-1f, 1f)
+
+                            if (kotlin.math.abs(scaleChange - 1f) > 0.0005f ||
+                                kotlin.math.abs(pan.x) > 0.25f ||
+                                kotlin.math.abs(pan.y) > 0.25f
+                            ) {
+                                gestureZoom = nextZoom
+                                gesturePanX = nextPanX
+                                gesturePanY = nextPanY
+                                val liveProject = latestProject.copy(
+                                    zoom = gestureZoom,
+                                    panX = gesturePanX,
+                                    panY = gesturePanY
+                                )
+                                previewTextureView?.let { view ->
+                                    applyTextureViewTransform(
+                                        view,
+                                        player?.videoSize?.width ?: 0,
+                                        player?.videoSize?.height ?: 0,
+                                        liveProject
+                                    )
+                                }
+                                changed = true
+                                event.changes.forEach { if (it.pressed) it.consume() }
+                            }
+                        }
+                    } while (event.changes.any { it.pressed })
+
+                    if (changed) latestTransform(gestureZoom, gesturePanX, gesturePanY)
+                }
+            }
     ) {
         if (player != null) {
             AndroidView(
                 factory = { ctx -> TextureView(ctx).also { view ->
+                    previewTextureView = view
                     player.setVideoTextureView(view)
                     view.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                 } },
@@ -160,6 +208,12 @@ fun MC2TemplatePreview(
                         brightness = brightness,
                         contrast = contrast,
                         saturation = saturation
+                    )
+                    applyTextureViewTransform(
+                        view,
+                        player.videoSize.width,
+                        player.videoSize.height,
+                        previewProject
                     )
                 },
                 modifier = Modifier.fillMaxSize()
@@ -179,54 +233,6 @@ fun MC2TemplatePreview(
                     maxHeight * VideoCompositionGeometry.APERTURE_HEIGHT
                 )
                 .clip(RoundedCornerShape(22.dp))
-                .pointerInput(videoUri) {
-                    awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        var gestureZoom = latestZoom
-                        var gesturePanX = latestPanX
-                        var gesturePanY = latestPanY
-                        var changed = false
-
-                        do {
-                            val event = awaitPointerEvent()
-                            if (event.changes.any { it.pressed }) {
-                                val scaleChange = event.calculateZoom()
-                                val pan = event.calculatePan()
-                                val nextZoom = (gestureZoom * scaleChange).coerceIn(1f, 4f)
-                                val nextPanX = if (nextZoom <= 1.01f) 0f else
-                                    (gesturePanX + pan.x / size.width / nextZoom * 1.5f).coerceIn(-1f, 1f)
-                                val nextPanY = if (nextZoom <= 1.01f) 0f else
-                                    (gesturePanY + pan.y / size.height / nextZoom * 1.5f).coerceIn(-1f, 1f)
-
-                                if (kotlin.math.abs(scaleChange - 1f) > 0.001f ||
-                                    kotlin.math.abs(pan.x) > 0.5f ||
-                                    kotlin.math.abs(pan.y) > 0.5f
-                                ) {
-                                    transformGestureActive = true
-                                    gestureZoom = nextZoom
-                                    gesturePanX = nextPanX
-                                    gesturePanY = nextPanY
-                                    // Update the live preview transform immediately, but only
-                                    // commit to the project once when the fingers are lifted.
-                                    previewTransform.updateProject(
-                                        latestProject.copy(
-                                            zoom = gestureZoom,
-                                            panX = gesturePanX,
-                                            panY = gesturePanY
-                                        )
-                                    )
-                                    changed = true
-                                    event.changes.forEach { if (it.pressed) it.consume() }
-                                }
-                            }
-                        } while (event.changes.any { it.pressed })
-
-                        if (changed) {
-                            transformGestureActive = false
-                            latestTransform(gestureZoom, gesturePanX, gesturePanY)
-                        }
-                    }
-                }
         )
 
         Image(
@@ -236,6 +242,55 @@ fun MC2TemplatePreview(
             modifier = Modifier.fillMaxSize()
         )
     }
+}
+
+
+/**
+ * Apply the same aperture/fit/zoom/pan geometry directly to TextureView.
+ * TextureView.setTransform updates the visible frame while a finger moves;
+ * export continues to use the matching Media3 transformation.
+ */
+private fun applyTextureViewTransform(
+    view: TextureView,
+    sourceWidth: Int,
+    sourceHeight: Int,
+    project: Project
+) {
+    if (sourceWidth <= 0 || sourceHeight <= 0 || view.width <= 0 || view.height <= 0) return
+
+    val apertureWidth = view.width * VideoCompositionGeometry.APERTURE_WIDTH
+    val apertureHeight = view.height * VideoCompositionGeometry.APERTURE_HEIGHT
+    val scale = VideoCompositionGeometry.calculateScale(
+        sourceWidth = sourceWidth.toFloat(),
+        sourceHeight = sourceHeight.toFloat(),
+        viewportWidth = apertureWidth,
+        viewportHeight = apertureHeight,
+        rotationDegrees = project.rotation,
+        zoom = project.zoom,
+        crop = project.crop
+    )
+    val radians = Math.toRadians(project.rotation.toDouble())
+    val cosine = kotlin.math.cos(radians).toFloat()
+    val sine = kotlin.math.sin(radians).toFloat()
+    val centerX = view.width * (VideoCompositionGeometry.APERTURE_LEFT + VideoCompositionGeometry.APERTURE_WIDTH / 2f)
+    val centerY = view.height * (VideoCompositionGeometry.APERTURE_TOP + VideoCompositionGeometry.APERTURE_HEIGHT / 2f)
+    val panX = project.panX.coerceIn(-1f, 1f) * VideoCompositionGeometry.USER_PAN_LIMIT * apertureWidth
+    val panY = project.panY.coerceIn(-1f, 1f) * VideoCompositionGeometry.USER_PAN_LIMIT * apertureHeight
+    val halfWidth = sourceWidth / 2f
+    val halfHeight = sourceHeight / 2f
+
+    val matrix = Matrix().apply {
+        setValues(floatArrayOf(
+            scale * cosine,
+            -scale * sine,
+            centerX + panX - scale * cosine * halfWidth + scale * sine * halfHeight,
+            scale * sine,
+            scale * cosine,
+            centerY + panY - scale * sine * halfWidth - scale * cosine * halfHeight,
+            0f, 0f, 1f
+        ))
+    }
+    view.setTransform(matrix)
 }
 
 @OptIn(UnstableApi::class)
