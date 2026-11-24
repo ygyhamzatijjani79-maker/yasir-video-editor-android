@@ -152,43 +152,24 @@ fun MC2TemplatePreview(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         var activePointerId = down.id
-                        var lastPosition = down.position
                         var gestureZoom = latestZoom
                         var gesturePanX = latestPanX
                         var gesturePanY = latestPanY
                         var changed = false
-                        var pendingEvent: androidx.compose.ui.input.pointer.PointerEvent? = null
 
-                        // One-finger movement is ignored until a long press. A
-                        // second finger can still start pinch zoom immediately.
-                        val longPressReached = kotlinx.coroutines.withTimeoutOrNull(
-                            viewConfiguration.longPressTimeoutMillis
-                        ) {
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                val pressed = event.changes.filter { it.pressed }
-                                if (pressed.size >= 2) {
-                                    pendingEvent = event
-                                    return@withTimeoutOrNull false
-                                }
-                                val primary = event.changes.firstOrNull { it.id == activePointerId }
-                                if (primary == null || !primary.pressed) {
-                                    return@withTimeoutOrNull false
-                                }
-                                if ((primary.position - down.position).getDistance() > viewConfiguration.touchSlop) {
-                                    return@withTimeoutOrNull false
-                                }
-                            }
-                            false
-                        } ?: true
-
-                        // A tap or ordinary one-finger swipe must not move the
-                        // video. Pinch remains available without a long press.
-                        if (!longPressReached && pendingEvent == null) {
+                        // Compose's restricted pointer scope supplies the long-
+                        // press timeout safely. A second finger that cancels the
+                        // hold is detected from the current event and starts pinch.
+                        val longPress = androidx.compose.foundation.gestures.awaitLongPressOrCancellation(down.id)
+                        var event = currentEvent
+                        val pinchStarted = event.changes.count { it.pressed } >= 2
+                        if (longPress == null && !pinchStarted) {
                             return@awaitEachGesture
                         }
+                        val longPressReached = longPress != null
+                        var lastPosition = longPress?.position ?: down.position
+                        if (longPressReached) longPress.consume()
 
-                        var event = pendingEvent ?: awaitPointerEvent()
                         while (event.changes.any { it.pressed }) {
                             val pressed = event.changes.filter { it.pressed }
                             if (pressed.size >= 2) {
