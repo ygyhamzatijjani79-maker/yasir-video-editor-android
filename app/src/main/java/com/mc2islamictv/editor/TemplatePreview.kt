@@ -42,6 +42,22 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.max
 
+private data class PreviewTransformKey(
+    val viewWidth: Int,
+    val viewHeight: Int,
+    val videoWidth: Int,
+    val videoHeight: Int,
+    val pixelWidthHeightRatio: Float,
+    val zoom: Float,
+    val panX: Float,
+    val panY: Float,
+    val crop: Float,
+    val rotation: Float,
+    val brightness: Float,
+    val contrast: Float,
+    val saturation: Float
+)
+
 @Composable
 @OptIn(UnstableApi::class)
 fun MC2TemplatePreview(
@@ -85,6 +101,9 @@ fun MC2TemplatePreview(
     val latestPanY by rememberUpdatedState(panY)
     val latestTransform by rememberUpdatedState(onTransformChange)
     var previewTextureView by remember(videoUri) { mutableStateOf<TextureView?>(null) }
+    // Remember the last state-driven transform so template animation recompositions
+    // do not overwrite a gesture's live TextureView matrix with stale project values.
+    val lastAppliedTransformKey = remember(videoUri) { mutableListOf<PreviewTransformKey?>(null) }
     var playerPositionMs by remember(videoUri) { mutableLongStateOf(0L) }
 
     val player = remember(videoUri) {
@@ -194,10 +213,6 @@ fun MC2TemplatePreview(
                                     saturation = latestProject.saturation
                                 )
                             }
-                            // Persist each live change. Otherwise the animated
-                            // preview recomposition can restore stale zoom/pan
-                            // values while the fingers are still moving.
-                            latestTransform(gestureZoom, gesturePanX, gesturePanY)
                         }
 
                         // Compose's restricted pointer scope supplies the long-
@@ -259,9 +274,13 @@ fun MC2TemplatePreview(
                                 }
                                 lastPosition = pointer.position
                             }
-                            if (eventChanged) applyGestureTransform()
+                            if (eventChanged) {
+                                changed = true
+                                applyGestureTransform()
+                            }
                             event = awaitPointerEvent()
                         }
+                        if (changed) latestTransform(gestureZoom, gesturePanX, gesturePanY)
                     }
                 },
             contentAlignment = Alignment.Center
@@ -274,8 +293,9 @@ fun MC2TemplatePreview(
                         view.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                     } },
                     update = { view ->
-                        applyPreviewTransform(
-                            view = view,
+                        val key = PreviewTransformKey(
+                            viewWidth = view.width,
+                            viewHeight = view.height,
                             videoWidth = player.videoSize.width,
                             videoHeight = player.videoSize.height,
                             pixelWidthHeightRatio = player.videoSize.pixelWidthHeightRatio,
@@ -288,6 +308,23 @@ fun MC2TemplatePreview(
                             contrast = contrast,
                             saturation = saturation
                         )
+                        if (lastAppliedTransformKey[0] != key) {
+                            applyPreviewTransform(
+                                view = view,
+                                videoWidth = player.videoSize.width,
+                                videoHeight = player.videoSize.height,
+                                pixelWidthHeightRatio = player.videoSize.pixelWidthHeightRatio,
+                                zoom = zoom,
+                                panX = panX,
+                                panY = panY,
+                                crop = crop,
+                                rotation = rotation,
+                                brightness = brightness,
+                                contrast = contrast,
+                                saturation = saturation
+                            )
+                            lastAppliedTransformKey[0] = key
+                        }
                     },
                     modifier = Modifier.fillMaxSize()
                 )
