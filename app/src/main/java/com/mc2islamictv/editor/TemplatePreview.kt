@@ -158,6 +158,45 @@ fun MC2TemplatePreview(
         ).asImageBitmap()
     }
 
+    fun gesturePanLimits(viewportWidth: Int, viewportHeight: Int, forZoom: Float): Pair<Float, Float> {
+        val videoSize = player?.videoSize
+        val pixelRatio = videoSize?.pixelWidthHeightRatio
+            ?.takeIf { it.isFinite() && it > 0f } ?: 1f
+        val sourceWidth = videoSize?.width?.takeIf { it > 0 }
+            ?.toFloat()?.times(pixelRatio) ?: viewportWidth.toFloat()
+        val sourceHeight = videoSize?.height?.takeIf { it > 0 }
+            ?.toFloat() ?: viewportHeight.toFloat()
+        return VideoCompositionGeometry.calculatePanLimits(
+            sourceWidth = sourceWidth,
+            sourceHeight = sourceHeight,
+            viewportWidth = viewportWidth.toFloat(),
+            viewportHeight = viewportHeight.toFloat(),
+            rotationDegrees = latestProject.rotation,
+            zoom = forZoom,
+            crop = latestProject.crop
+        )
+    }
+
+    fun applyGestureTransform(gestureZoom: Float, gesturePanX: Float, gesturePanY: Float) {
+        val videoSize = player?.videoSize
+        previewTextureView?.let { view ->
+            applyPreviewTransform(
+                view = view,
+                videoWidth = videoSize?.width ?: 0,
+                videoHeight = videoSize?.height ?: 0,
+                pixelWidthHeightRatio = videoSize?.pixelWidthHeightRatio ?: 1f,
+                zoom = gestureZoom,
+                panX = gesturePanX,
+                panY = gesturePanY,
+                crop = latestProject.crop,
+                rotation = latestProject.rotation,
+                brightness = latestProject.brightness,
+                contrast = latestProject.contrast,
+                saturation = latestProject.saturation
+            )
+        }
+    }
+
     BoxWithConstraints(
         modifier = modifier.aspectRatio(1f).clip(RoundedCornerShape(18.dp)).background(Color(0xFF064226))
     ) {
@@ -169,74 +208,73 @@ fun MC2TemplatePreview(
                 .size(videoWidth, videoHeight)
                 .clip(RoundedCornerShape(22.dp))
                 .pointerInput(videoUri) {
+                    // One-finger repositioning is deliberately gated by a real
+                    // long press, so ordinary taps and swipes cannot move the clip.
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
+                        val longPress = awaitLongPressOrCancellation(down.id)
+                            ?: return@awaitEachGesture
                         var activePointerId = down.id
+                        var lastPosition = longPress.position
                         var gestureZoom = latestZoom
                         var gesturePanX = latestPanX
                         var gesturePanY = latestPanY
                         var changed = false
+                        longPress.consume()
 
-                        fun panLimits(forZoom: Float): Pair<Float, Float> {
-                            val videoSize = player?.videoSize
-                            val pixelRatio = videoSize?.pixelWidthHeightRatio
-                                ?.takeIf { it.isFinite() && it > 0f } ?: 1f
-                            val sourceWidth = videoSize?.width?.takeIf { it > 0 }
-                                ?.toFloat()?.times(pixelRatio) ?: size.width.toFloat()
-                            val sourceHeight = videoSize?.height?.takeIf { it > 0 }
-                                ?.toFloat() ?: size.height.toFloat()
-                            return VideoCompositionGeometry.calculatePanLimits(
-                                sourceWidth = sourceWidth,
-                                sourceHeight = sourceHeight,
-                                viewportWidth = size.width.toFloat(),
-                                viewportHeight = size.height.toFloat(),
-                                rotationDegrees = latestProject.rotation,
-                                zoom = forZoom,
-                                crop = latestProject.crop
-                            )
-                        }
-
-                        fun applyGestureTransform() {
-                            val videoSize = player?.videoSize
-                            previewTextureView?.let { view ->
-                                applyPreviewTransform(
-                                    view = view,
-                                    videoWidth = videoSize?.width ?: 0,
-                                    videoHeight = videoSize?.height ?: 0,
-                                    pixelWidthHeightRatio = videoSize?.pixelWidthHeightRatio ?: 1f,
-                                    zoom = gestureZoom,
-                                    panX = gesturePanX,
-                                    panY = gesturePanY,
-                                    crop = latestProject.crop,
-                                    rotation = latestProject.rotation,
-                                    brightness = latestProject.brightness,
-                                    contrast = latestProject.contrast,
-                                    saturation = latestProject.saturation
-                                )
-                            }
-                        }
-
-                        // Compose's restricted pointer scope supplies the long-
-                        // press timeout safely. A second finger that cancels the
-                        // hold is detected from the current event and starts pinch.
-                        val longPress = awaitLongPressOrCancellation(down.id)
                         var event = currentEvent
-                        val pinchStarted = event.changes.count { it.pressed } >= 2
-                        if (longPress == null && !pinchStarted) {
-                            return@awaitEachGesture
-                        }
-                        val longPressReached = longPress != null
-                        var lastPosition = longPress?.position ?: down.position
-                        if (longPressReached) longPress.consume()
-
                         while (event.changes.any { it.pressed }) {
-                            var eventChanged = false
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.size == 1) {
+                                val pointer = pressed.firstOrNull { it.id == activePointerId }
+                                    ?: pressed.first().also {
+                                        activePointerId = it.id
+                                        lastPosition = it.position
+                                    }
+                                val drag = pointer.position - lastPosition
+                                if (kotlin.math.abs(drag.x) > 0.25f || kotlin.math.abs(drag.y) > 0.25f) {
+                                    val (limitX, limitY) = gesturePanLimits(size.width, size.height, gestureZoom)
+                                    val nextPanX = (gesturePanX +
+                                        drag.x / size.width / gestureZoom * 1.5f).coerceIn(-limitX, limitX)
+                                    val nextPanY = (gesturePanY +
+                                        drag.y / size.height / gestureZoom * 1.5f).coerceIn(-limitY, limitY)
+                                    if (nextPanX != gesturePanX || nextPanY != gesturePanY) {
+                                        gesturePanX = nextPanX
+                                        gesturePanY = nextPanY
+                                        changed = true
+                                        pointer.consume()
+                                        applyGestureTransform(gestureZoom, gesturePanX, gesturePanY)
+                                    }
+                                }
+                                lastPosition = pointer.position
+                            } else if (pressed.size >= 2) {
+                                // The inner pinch detector owns these events.
+                                pressed.firstOrNull { it.id == activePointerId }?.let {
+                                    lastPosition = it.position
+                                }
+                            }
+                            event = awaitPointerEvent()
+                        }
+                        if (changed) latestTransform(gestureZoom, gesturePanX, gesturePanY)
+                    }
+                }
+                .pointerInput(videoUri) {
+                    // A separate multi-pointer detector starts pinch immediately;
+                    // it does not wait for the one-finger long-press timeout.
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        var gestureZoom = latestZoom
+                        var gesturePanX = latestPanX
+                        var gesturePanY = latestPanY
+                        var changed = false
+                        var event = awaitPointerEvent()
+                        while (event.changes.any { it.pressed }) {
                             val pressed = event.changes.filter { it.pressed }
                             if (pressed.size >= 2) {
                                 val scaleChange = event.calculateZoom()
                                 val pan = event.calculatePan()
                                 val nextZoom = (gestureZoom * scaleChange).coerceIn(1f, 4f)
-                                val (limitX, limitY) = panLimits(nextZoom)
+                                val (limitX, limitY) = gesturePanLimits(size.width, size.height, nextZoom)
                                 val nextPanX = (gesturePanX +
                                     pan.x / size.width / nextZoom * 1.5f).coerceIn(-limitX, limitX)
                                 val nextPanY = (gesturePanY +
@@ -248,36 +286,10 @@ fun MC2TemplatePreview(
                                     gestureZoom = nextZoom
                                     gesturePanX = nextPanX
                                     gesturePanY = nextPanY
-                                    eventChanged = true
+                                    changed = true
                                     event.changes.forEach { if (it.pressed) it.consume() }
+                                    applyGestureTransform(gestureZoom, gesturePanX, gesturePanY)
                                 }
-                                pressed.firstOrNull { it.id == activePointerId }?.let {
-                                    lastPosition = it.position
-                                }
-                            } else if (longPressReached && pressed.isNotEmpty()) {
-                                val pointer = pressed.firstOrNull { it.id == activePointerId } ?: pressed.first().also {
-                                    activePointerId = it.id
-                                    lastPosition = it.position
-                                }
-                                val drag = pointer.position - lastPosition
-                                if (kotlin.math.abs(drag.x) > 0.25f || kotlin.math.abs(drag.y) > 0.25f) {
-                                    val (limitX, limitY) = panLimits(gestureZoom)
-                                    val nextPanX = (gesturePanX +
-                                        drag.x / size.width / gestureZoom * 1.5f).coerceIn(-limitX, limitX)
-                                    val nextPanY = (gesturePanY +
-                                        drag.y / size.height / gestureZoom * 1.5f).coerceIn(-limitY, limitY)
-                                    if (nextPanX != gesturePanX || nextPanY != gesturePanY) {
-                                        gesturePanX = nextPanX
-                                        gesturePanY = nextPanY
-                                        eventChanged = true
-                                        pointer.consume()
-                                    }
-                                }
-                                lastPosition = pointer.position
-                            }
-                            if (eventChanged) {
-                                changed = true
-                                applyGestureTransform()
                             }
                             event = awaitPointerEvent()
                         }
