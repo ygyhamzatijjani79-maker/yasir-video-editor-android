@@ -16,6 +16,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.*
@@ -160,7 +161,7 @@ fun MC2TemplatePreview(
                         // Compose's restricted pointer scope supplies the long-
                         // press timeout safely. A second finger that cancels the
                         // hold is detected from the current event and starts pinch.
-                        val longPress = androidx.compose.foundation.gestures.awaitLongPressOrCancellation(down.id)
+                        val longPress = awaitLongPressOrCancellation(down.id)
                         var event = currentEvent
                         val pinchStarted = event.changes.count { it.pressed } >= 2
                         if (longPress == null && !pinchStarted) {
