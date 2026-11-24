@@ -42,6 +42,7 @@ import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.VideoEncoderSettings
 import androidx.media3.transformer.ProgressHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -456,7 +457,13 @@ private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, 
         var exportStageFinished = false
         try {
             if (output.exists()) output.delete()
+            // Keep the square 1080p composition, but request a moderate VBR
+            // bitrate to reduce MP4 size without changing brightness or geometry.
+            val videoEncoderSettings = VideoEncoderSettings.Builder()
+                .setBitrate(3_500_000)
+                .build()
             val encoderFactory = DefaultEncoderFactory.Builder(this@exportMp4)
+                .setRequestedVideoEncoderSettings(videoEncoderSettings)
                 .setEnableFallback(true)
                 .build()
             val transformer = Transformer.Builder(this@exportMp4)
