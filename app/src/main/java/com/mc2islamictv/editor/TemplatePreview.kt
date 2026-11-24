@@ -156,7 +156,49 @@ fun MC2TemplatePreview(
                         var gestureZoom = latestZoom
                         var gesturePanX = latestPanX
                         var gesturePanY = latestPanY
-                        var changed = false
+
+                        fun panLimits(forZoom: Float): Pair<Float, Float> {
+                            val videoSize = player?.videoSize
+                            val pixelRatio = videoSize?.pixelWidthHeightRatio
+                                ?.takeIf { it.isFinite() && it > 0f } ?: 1f
+                            val sourceWidth = videoSize?.width?.takeIf { it > 0 }
+                                ?.toFloat()?.times(pixelRatio) ?: size.width.toFloat()
+                            val sourceHeight = videoSize?.height?.takeIf { it > 0 }
+                                ?.toFloat() ?: size.height.toFloat()
+                            return VideoCompositionGeometry.calculatePanLimits(
+                                sourceWidth = sourceWidth,
+                                sourceHeight = sourceHeight,
+                                viewportWidth = size.width.toFloat(),
+                                viewportHeight = size.height.toFloat(),
+                                rotationDegrees = latestProject.rotation,
+                                zoom = forZoom,
+                                crop = latestProject.crop
+                            )
+                        }
+
+                        fun applyGestureTransform() {
+                            val videoSize = player?.videoSize
+                            previewTextureView?.let { view ->
+                                applyPreviewTransform(
+                                    view = view,
+                                    videoWidth = videoSize?.width ?: 0,
+                                    videoHeight = videoSize?.height ?: 0,
+                                    pixelWidthHeightRatio = videoSize?.pixelWidthHeightRatio ?: 1f,
+                                    zoom = gestureZoom,
+                                    panX = gesturePanX,
+                                    panY = gesturePanY,
+                                    crop = latestProject.crop,
+                                    rotation = latestProject.rotation,
+                                    brightness = latestProject.brightness,
+                                    contrast = latestProject.contrast,
+                                    saturation = latestProject.saturation
+                                )
+                            }
+                            // Persist each live change. Otherwise the animated
+                            // preview recomposition can restore stale zoom/pan
+                            // values while the fingers are still moving.
+                            latestTransform(gestureZoom, gesturePanX, gesturePanY)
+                        }
 
                         // Compose's restricted pointer scope supplies the long-
                         // press timeout safely. A second finger that cancels the
@@ -172,23 +214,25 @@ fun MC2TemplatePreview(
                         if (longPressReached) longPress.consume()
 
                         while (event.changes.any { it.pressed }) {
+                            var eventChanged = false
                             val pressed = event.changes.filter { it.pressed }
                             if (pressed.size >= 2) {
                                 val scaleChange = event.calculateZoom()
                                 val pan = event.calculatePan()
                                 val nextZoom = (gestureZoom * scaleChange).coerceIn(1f, 4f)
-                                val nextPanX = if (nextZoom <= 1.01f) 0f else
-                                    (gesturePanX + pan.x / size.width / nextZoom * 1.5f).coerceIn(-1f, 1f)
-                                val nextPanY = if (nextZoom <= 1.01f) 0f else
-                                    (gesturePanY + pan.y / size.height / nextZoom * 1.5f).coerceIn(-1f, 1f)
-                                if (kotlin.math.abs(scaleChange - 1f) > 0.0005f ||
-                                    kotlin.math.abs(pan.x) > 0.25f ||
-                                    kotlin.math.abs(pan.y) > 0.25f
+                                val (limitX, limitY) = panLimits(nextZoom)
+                                val nextPanX = (gesturePanX +
+                                    pan.x / size.width / nextZoom * 1.5f).coerceIn(-limitX, limitX)
+                                val nextPanY = (gesturePanY +
+                                    pan.y / size.height / nextZoom * 1.5f).coerceIn(-limitY, limitY)
+                                if (nextZoom != gestureZoom ||
+                                    nextPanX != gesturePanX ||
+                                    nextPanY != gesturePanY
                                 ) {
                                     gestureZoom = nextZoom
                                     gesturePanX = nextPanX
                                     gesturePanY = nextPanY
-                                    changed = true
+                                    eventChanged = true
                                     event.changes.forEach { if (it.pressed) it.consume() }
                                 }
                                 pressed.firstOrNull { it.id == activePointerId }?.let {
@@ -201,39 +245,22 @@ fun MC2TemplatePreview(
                                 }
                                 val drag = pointer.position - lastPosition
                                 if (kotlin.math.abs(drag.x) > 0.25f || kotlin.math.abs(drag.y) > 0.25f) {
-                                    val nextPanX = if (gestureZoom <= 1.01f) 0f else
-                                        (gesturePanX + drag.x / size.width / gestureZoom * 1.5f).coerceIn(-1f, 1f)
-                                    val nextPanY = if (gestureZoom <= 1.01f) 0f else
-                                        (gesturePanY + drag.y / size.height / gestureZoom * 1.5f).coerceIn(-1f, 1f)
+                                    val (limitX, limitY) = panLimits(gestureZoom)
+                                    val nextPanX = (gesturePanX +
+                                        drag.x / size.width / gestureZoom * 1.5f).coerceIn(-limitX, limitX)
+                                    val nextPanY = (gesturePanY +
+                                        drag.y / size.height / gestureZoom * 1.5f).coerceIn(-limitY, limitY)
                                     if (nextPanX != gesturePanX || nextPanY != gesturePanY) {
                                         gesturePanX = nextPanX
                                         gesturePanY = nextPanY
-                                        changed = true
+                                        eventChanged = true
                                         pointer.consume()
                                     }
                                 }
                                 lastPosition = pointer.position
                             }
+                            if (eventChanged) applyGestureTransform()
                             event = awaitPointerEvent()
-                        }
-
-                        if (changed) {
-                            previewTextureView?.let { view ->
-                                applyPreviewTransform(
-                                    view = view,
-                                    videoWidth = player?.videoSize?.width ?: 0,
-                                    videoHeight = player?.videoSize?.height ?: 0,
-                                    zoom = gestureZoom,
-                                    panX = gesturePanX,
-                                    panY = gesturePanY,
-                                    crop = latestProject.crop,
-                                    rotation = latestProject.rotation,
-                                    brightness = latestProject.brightness,
-                                    contrast = latestProject.contrast,
-                                    saturation = latestProject.saturation
-                                )
-                            }
-                            latestTransform(gestureZoom, gesturePanX, gesturePanY)
                         }
                     }
                 },
