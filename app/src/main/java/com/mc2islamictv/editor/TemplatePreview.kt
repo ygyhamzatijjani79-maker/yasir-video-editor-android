@@ -251,6 +251,7 @@ fun MC2TemplatePreview(
                             view = view,
                             videoWidth = player.videoSize.width,
                             videoHeight = player.videoSize.height,
+                            pixelWidthHeightRatio = player.videoSize.pixelWidthHeightRatio,
                             zoom = zoom,
                             panX = panX,
                             panY = panY,
@@ -275,6 +276,7 @@ private fun applyPreviewTransform(
     view: TextureView,
     videoWidth: Int,
     videoHeight: Int,
+    pixelWidthHeightRatio: Float = 1f,
     zoom: Float,
     panX: Float,
     panY: Float,
@@ -288,7 +290,11 @@ private fun applyPreviewTransform(
     val vh = view.height.toFloat()
     if (vw <= 0f || vh <= 0f) return
 
-    val sourceW = videoWidth.takeIf { it > 0 }?.toFloat() ?: vw
+    // Media3 reports non-square-pixel (anamorphic) clips through this ratio.
+    // Include it in the source display width before calculating fit/crop so
+    // TextureView does not stretch those clips to the aperture's aspect ratio.
+    val safePixelRatio = pixelWidthHeightRatio.takeIf { it.isFinite() && it > 0f } ?: 1f
+    val sourceW = videoWidth.takeIf { it > 0 }?.toFloat()?.times(safePixelRatio) ?: vw
     val sourceH = videoHeight.takeIf { it > 0 }?.toFloat() ?: vh
     val scale = VideoCompositionGeometry.calculateScale(
         sourceWidth = sourceW,
