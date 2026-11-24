@@ -62,13 +62,33 @@ fun MC2TemplatePreview(
     onTransformChange: (Float, Float, Float) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
+    val previewProject = Project(
+        name = "Preview",
+        description = description,
+        teacher = teacher,
+        brightness = brightness,
+        crop = crop,
+        zoom = zoom,
+        panX = panX,
+        panY = panY,
+        contrast = contrast,
+        saturation = saturation,
+        rotation = rotation
+    )
+    val previewTransform = remember(videoUri) {
+        MC2ExportRenderer.PreviewMatchedApertureTransformation(previewProject)
+    }
+    // Keep one Media3 transform instance alive during playback. Updating its
+    // project snapshot changes the next frame without rebuilding the player pipeline.
+    SideEffect { previewTransform.updateProject(previewProject) }
+
     val latestZoom by rememberUpdatedState(zoom)
     val latestPanX by rememberUpdatedState(panX)
     val latestPanY by rememberUpdatedState(panY)
     val latestTransform by rememberUpdatedState(onTransformChange)
     var playerPositionMs by remember(videoUri) { mutableLongStateOf(0L) }
 
-    val player = remember(videoUri) {
+    val player = remember(videoUri, previewTransform) {
         if (videoUri.isBlank()) null else ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.parse(videoUri)))
             repeatMode = ExoPlayer.REPEAT_MODE_ONE
@@ -80,14 +100,12 @@ fun MC2TemplatePreview(
                 true
             )
             setHandleAudioBecomingNoisy(true)
-            setVideoEffects(emptyList())
+            // Preview and export now run the exact same Media3 aperture transform.
+            setVideoEffects(listOf(previewTransform))
             prepare()
             playWhenReady = true
         }
     }
-    // Preview adjustments are applied directly to TextureView. Rebuilding Media3's
-    // video-effects pipeline on every slider movement can stall playback and freeze
-    // the playhead. TextureView transforms keep playback/audio/timeline continuous.
     LaunchedEffect(player, isPlaying, speed, volume, muted) {
         player?.playbackParameters = androidx.media3.common.PlaybackParameters(speed.coerceIn(0.5f, 2f))
         player?.volume = if (muted) 0f else volume.coerceIn(0f, 1f)
@@ -123,96 +141,65 @@ fun MC2TemplatePreview(
     BoxWithConstraints(
         modifier = modifier.aspectRatio(1f).clip(RoundedCornerShape(18.dp)).background(Color(0xFF064226))
     ) {
-        val videoWidth = maxWidth * VideoCompositionGeometry.APERTURE_WIDTH
-        val videoHeight = maxHeight * VideoCompositionGeometry.APERTURE_HEIGHT
+        if (player != null) {
+            AndroidView(
+                factory = { ctx -> TextureView(ctx).also { view ->
+                    player.setVideoTextureView(view)
+                    view.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+                } },
+                update = { view ->
+                    applyPreviewColor(
+                        view = view,
+                        brightness = brightness,
+                        contrast = contrast,
+                        saturation = saturation
+                    )
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        // Gesture surface stays aligned to the visible aperture. The video itself
+        // is positioned by the same Media3 transformation used for MP4 export.
         Box(
             modifier = Modifier
-                .offset(x = maxWidth * VideoCompositionGeometry.APERTURE_LEFT, y = maxHeight * VideoCompositionGeometry.APERTURE_TOP)
-                .size(videoWidth, videoHeight)
+                .offset(
+                    x = maxWidth * VideoCompositionGeometry.APERTURE_LEFT,
+                    y = maxHeight * VideoCompositionGeometry.APERTURE_TOP
+                )
+                .size(
+                    maxWidth * VideoCompositionGeometry.APERTURE_WIDTH,
+                    maxHeight * VideoCompositionGeometry.APERTURE_HEIGHT
+                )
                 .clip(RoundedCornerShape(22.dp))
                 .pointerInput(videoUri) {
                     detectTransformGestures { _, pan, scaleChange, _ ->
                         val nextZoom = (latestZoom * scaleChange).coerceIn(1f, 4f)
-                        val nextPanX = if (nextZoom <= 1.01f) 0f else (latestPanX + pan.x / size.width / nextZoom * 1.5f).coerceIn(-1f, 1f)
-                        val nextPanY = if (nextZoom <= 1.01f) 0f else (latestPanY + pan.y / size.height / nextZoom * 1.5f).coerceIn(-1f, 1f)
+                        val nextPanX = if (nextZoom <= 1.01f) 0f else
+                            (latestPanX + pan.x / size.width / nextZoom * 1.5f).coerceIn(-1f, 1f)
+                        val nextPanY = if (nextZoom <= 1.01f) 0f else
+                            (latestPanY + pan.y / size.height / nextZoom * 1.5f).coerceIn(-1f, 1f)
                         latestTransform(nextZoom, nextPanX, nextPanY)
                     }
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            if (player != null) {
-                AndroidView(
-                    factory = { ctx -> TextureView(ctx).also { view ->
-                        player.setVideoTextureView(view)
-                        view.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
-                    } },
-                    update = { view ->
-                        applyPreviewTransform(
-                            view = view,
-                            videoWidth = player.videoSize.width,
-                            videoHeight = player.videoSize.height,
-                            zoom = zoom,
-                            panX = panX,
-                            panY = panY,
-                            crop = crop,
-                            rotation = rotation,
-                            brightness = brightness,
-                            contrast = contrast,
-                            saturation = saturation
-                        )
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
-        Image(bitmap = template, contentDescription = "MC2 Islamic animated template", contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
+                }
+        )
 
+        Image(
+            bitmap = template,
+            contentDescription = "MC2 Islamic animated template",
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 
 @OptIn(UnstableApi::class)
-private fun applyPreviewTransform(
+private fun applyPreviewColor(
     view: TextureView,
-    videoWidth: Int,
-    videoHeight: Int,
-    zoom: Float,
-    panX: Float,
-    panY: Float,
-    crop: Float,
-    rotation: Float,
     brightness: Float,
     contrast: Float,
     saturation: Float
 ) {
-    val vw = view.width.toFloat()
-    val vh = view.height.toFloat()
-    if (vw <= 0f || vh <= 0f) return
-
-    val sourceW = videoWidth.takeIf { it > 0 }?.toFloat() ?: vw
-    val sourceH = videoHeight.takeIf { it > 0 }?.toFloat() ?: vh
-    val scale = VideoCompositionGeometry.calculateScale(
-        sourceWidth = sourceW,
-        sourceHeight = sourceH,
-        viewportWidth = vw,
-        viewportHeight = vh,
-        rotationDegrees = rotation,
-        zoom = zoom,
-        crop = crop
-    )
-    // TextureView maps its decoded texture into the view's rectangular bounds.
-    // Convert the source-pixel scale independently on X and Y before rotating.
-    // Export applies these same source-relative scales in its square-frame matrix;
-    // using scale/scale here incorrectly treats view pixels as source pixels and
-    // causes portrait/landscape clips to crop and zoom differently after export.
-    val scaleX = scale * sourceW / vw
-    val scaleY = scale * sourceH / vh
-    val matrix = Matrix().apply {
-        setScale(scaleX, scaleY, vw / 2f, vh / 2f)
-        postRotate(rotation, vw / 2f, vh / 2f)
-        postTranslate(panX.coerceIn(-1f, 1f) * vw * 0.45f, panY.coerceIn(-1f, 1f) * vh * 0.45f)
-    }
-    view.setTransform(matrix)
-
     val contrastFactor = 1f + contrast.coerceIn(-1f, 1f)
     val brightnessOffset = brightness.coerceIn(-1f, 1f) * 255f
     val color = ColorMatrix().apply {
