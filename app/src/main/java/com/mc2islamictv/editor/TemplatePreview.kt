@@ -14,7 +14,10 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
@@ -62,10 +65,25 @@ fun MC2TemplatePreview(
     onTransformChange: (Float, Float, Float) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
+    val previewProject = Project(
+        name = "Preview",
+        description = description,
+        teacher = teacher,
+        brightness = brightness,
+        crop = crop,
+        zoom = zoom,
+        panX = panX,
+        panY = panY,
+        contrast = contrast,
+        saturation = saturation,
+        rotation = rotation
+    )
+    val latestProject by rememberUpdatedState(previewProject)
     val latestZoom by rememberUpdatedState(zoom)
     val latestPanX by rememberUpdatedState(panX)
     val latestPanY by rememberUpdatedState(panY)
     val latestTransform by rememberUpdatedState(onTransformChange)
+    var previewTextureView by remember(videoUri) { mutableStateOf<TextureView?>(null) }
     var playerPositionMs by remember(videoUri) { mutableLongStateOf(0L) }
 
     val player = remember(videoUri) {
@@ -131,11 +149,50 @@ fun MC2TemplatePreview(
                 .size(videoWidth, videoHeight)
                 .clip(RoundedCornerShape(22.dp))
                 .pointerInput(videoUri) {
-                    detectTransformGestures { _, pan, scaleChange, _ ->
-                        val nextZoom = (latestZoom * scaleChange).coerceIn(1f, 4f)
-                        val nextPanX = if (nextZoom <= 1.01f) 0f else (latestPanX + pan.x / size.width / nextZoom * 1.5f).coerceIn(-1f, 1f)
-                        val nextPanY = if (nextZoom <= 1.01f) 0f else (latestPanY + pan.y / size.height / nextZoom * 1.5f).coerceIn(-1f, 1f)
-                        latestTransform(nextZoom, nextPanX, nextPanY)
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        var gestureZoom = latestZoom
+                        var gesturePanX = latestPanX
+                        var gesturePanY = latestPanY
+                        var changed = false
+                        do {
+                            val event = awaitPointerEvent()
+                            if (event.changes.any { it.pressed }) {
+                                val scaleChange = event.calculateZoom()
+                                val pan = event.calculatePan()
+                                val nextZoom = (gestureZoom * scaleChange).coerceIn(1f, 4f)
+                                val nextPanX = if (nextZoom <= 1.01f) 0f else
+                                    (gesturePanX + pan.x / size.width / nextZoom * 1.5f).coerceIn(-1f, 1f)
+                                val nextPanY = if (nextZoom <= 1.01f) 0f else
+                                    (gesturePanY + pan.y / size.height / nextZoom * 1.5f).coerceIn(-1f, 1f)
+                                if (kotlin.math.abs(scaleChange - 1f) > 0.0005f ||
+                                    kotlin.math.abs(pan.x) > 0.25f ||
+                                    kotlin.math.abs(pan.y) > 0.25f
+                                ) {
+                                    gestureZoom = nextZoom
+                                    gesturePanX = nextPanX
+                                    gesturePanY = nextPanY
+                                    previewTextureView?.let { view ->
+                                        applyPreviewTransform(
+                                            view = view,
+                                            videoWidth = player?.videoSize?.width ?: 0,
+                                            videoHeight = player?.videoSize?.height ?: 0,
+                                            zoom = gestureZoom,
+                                            panX = gesturePanX,
+                                            panY = gesturePanY,
+                                            crop = latestProject.crop,
+                                            rotation = latestProject.rotation,
+                                            brightness = latestProject.brightness,
+                                            contrast = latestProject.contrast,
+                                            saturation = latestProject.saturation
+                                        )
+                                    }
+                                    changed = true
+                                    event.changes.forEach { if (it.pressed) it.consume() }
+                                }
+                            }
+                        } while (event.changes.any { it.pressed })
+                        if (changed) latestTransform(gestureZoom, gesturePanX, gesturePanY)
                     }
                 },
             contentAlignment = Alignment.Center
@@ -143,6 +200,7 @@ fun MC2TemplatePreview(
             if (player != null) {
                 AndroidView(
                     factory = { ctx -> TextureView(ctx).also { view ->
+                        previewTextureView = view
                         player.setVideoTextureView(view)
                         view.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                     } },

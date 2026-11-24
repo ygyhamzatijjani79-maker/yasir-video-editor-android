@@ -42,6 +42,7 @@ import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.VideoEncoderSettings
 import androidx.media3.transformer.ProgressHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -54,6 +55,7 @@ private val Emerald = Color(0xFF064B2B)
 private val Gold = Color(0xFFD9A928)
 private val Cream = Color(0xFFFFF3D6)
 private val Ink = Color(0xFF14251B)
+private const val EXPORT_VIDEO_BITRATE_BPS = 1_500_000
 
 data class TextClip(val id: String = UUID.randomUUID().toString(), val text: String, val startMs: Long, val endMs: Long)
 data class Project(val id: String = UUID.randomUUID().toString(), val name: String, val video: String = "", val description: String = "", val teacher: String = "", val overlays: List<TextClip> = emptyList(), val brightness: Float = 0f, val crop: Float = 0f, val zoom: Float = 1f, val panX: Float = 0f, val panY: Float = 0f, val contrast: Float = 0f, val saturation: Float = 0f, val rotation: Float = 0f, val speed: Float = 1f, val volume: Float = 1f, val trimStartMs: Long = 0L, val trimEndMs: Long = 0L, val muted: Boolean = false, val updated: Long = System.currentTimeMillis())
@@ -456,7 +458,13 @@ private fun MainActivity.exportMp4(project: Project, onProgress: (Int) -> Unit, 
         var exportStageFinished = false
         try {
             if (output.exists()) output.delete()
+            // Keep the square 1080p composition, but request a moderate VBR
+            // bitrate to reduce MP4 size without changing brightness or geometry.
+            val videoEncoderSettings = VideoEncoderSettings.Builder()
+                .setBitrate(EXPORT_VIDEO_BITRATE_BPS)
+                .build()
             val encoderFactory = DefaultEncoderFactory.Builder(this@exportMp4)
+                .setRequestedVideoEncoderSettings(videoEncoderSettings)
                 .setEnableFallback(true)
                 .build()
             val transformer = Transformer.Builder(this@exportMp4)
