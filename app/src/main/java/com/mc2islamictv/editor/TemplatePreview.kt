@@ -123,11 +123,11 @@ fun MC2TemplatePreview(
     BoxWithConstraints(
         modifier = modifier.aspectRatio(1f).clip(RoundedCornerShape(18.dp)).background(Color(0xFF064226))
     ) {
-        val videoWidth = maxWidth * 0.575f
-        val videoHeight = maxHeight * 0.70f
+        val videoWidth = maxWidth * VideoCompositionGeometry.APERTURE_WIDTH
+        val videoHeight = maxHeight * VideoCompositionGeometry.APERTURE_HEIGHT
         Box(
             modifier = Modifier
-                .offset(x = maxWidth * 0.38f, y = maxHeight * 0.055f)
+                .offset(x = maxWidth * VideoCompositionGeometry.APERTURE_LEFT, y = maxHeight * VideoCompositionGeometry.APERTURE_TOP)
                 .size(videoWidth, videoHeight)
                 .clip(RoundedCornerShape(22.dp))
                 .pointerInput(videoUri) {
@@ -190,14 +190,15 @@ private fun applyPreviewTransform(
 
     val sourceW = videoWidth.takeIf { it > 0 }?.toFloat() ?: vw
     val sourceH = videoHeight.takeIf { it > 0 }?.toFloat() ?: vh
-    val angle = Math.toRadians(rotation.toDouble())
-    val rotatedW = kotlin.math.abs(sourceW * kotlin.math.cos(angle)) +
-        kotlin.math.abs(sourceH * kotlin.math.sin(angle))
-    val rotatedH = kotlin.math.abs(sourceH * kotlin.math.cos(angle)) +
-        kotlin.math.abs(sourceW * kotlin.math.sin(angle))
-    val baseScale = max(vw / rotatedW.toFloat(), vh / rotatedH.toFloat())
-    val userScale = (zoom.coerceIn(1f, 4f) / (1f - crop.coerceIn(0f, 0.4f))).coerceIn(1f, 7f)
-    val scale = baseScale * userScale
+    val scale = VideoCompositionGeometry.calculateScale(
+        sourceWidth = sourceW,
+        sourceHeight = sourceH,
+        viewportWidth = vw,
+        viewportHeight = vh,
+        rotationDegrees = rotation,
+        zoom = zoom,
+        crop = crop
+    )
     // TextureView maps its decoded texture into the view's rectangular bounds.
     // Convert the source-pixel scale independently on X and Y before rotating.
     // Export applies these same source-relative scales in its square-frame matrix;
