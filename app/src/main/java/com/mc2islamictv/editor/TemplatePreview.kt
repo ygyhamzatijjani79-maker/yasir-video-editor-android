@@ -175,6 +175,7 @@ fun MC2TemplatePreview(
                         var gestureZoom = latestZoom
                         var gesturePanX = latestPanX
                         var gesturePanY = latestPanY
+                        var changed = false
 
                         fun panLimits(forZoom: Float): Pair<Float, Float> {
                             val videoSize = player?.videoSize
