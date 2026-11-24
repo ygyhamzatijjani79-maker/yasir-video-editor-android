@@ -78,12 +78,15 @@ fun MC2TemplatePreview(
         saturation = saturation,
         rotation = rotation
     )
+    var transformGestureActive by remember(videoUri) { mutableStateOf(false) }
     val previewTransform = remember(videoUri) {
         MC2ExportRenderer.PreviewMatchedApertureTransformation(previewProject)
     }
     // Keep one Media3 transform instance alive during playback. Updating its
     // project snapshot changes the next frame without rebuilding the player pipeline.
-    SideEffect { previewTransform.updateProject(previewProject) }
+    SideEffect {
+        if (!transformGestureActive) previewTransform.updateProject(previewProject)
+    }
 
     val latestProject by rememberUpdatedState(previewProject)
     val latestZoom by rememberUpdatedState(zoom)
@@ -199,6 +202,7 @@ fun MC2TemplatePreview(
                                     kotlin.math.abs(pan.x) > 0.5f ||
                                     kotlin.math.abs(pan.y) > 0.5f
                                 ) {
+                                    transformGestureActive = true
                                     gestureZoom = nextZoom
                                     gesturePanX = nextPanX
                                     gesturePanY = nextPanY
@@ -218,6 +222,7 @@ fun MC2TemplatePreview(
                         } while (event.changes.any { it.pressed })
 
                         if (changed) {
+                            transformGestureActive = false
                             latestTransform(gestureZoom, gesturePanX, gesturePanY)
                         }
                     }
